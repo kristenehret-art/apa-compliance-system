@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Resend } from "npm:resend";
+import sgMail from "npm:@sendgrid/mail";
 
 type Member = {
   email: string | null;
@@ -31,9 +31,9 @@ Deno.serve(async () => {
   try {
     const projectUrl = Deno.env.get("PROJECT_URL");
     const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    const sendgridApiKey = Deno.env.get("SENDGRID_COMPLIANCE_API_KEY");
 
-    if (!projectUrl || !serviceRoleKey || !resendApiKey) {
+if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
       return new Response(
         JSON.stringify({
           success: false,
@@ -44,7 +44,7 @@ Deno.serve(async () => {
     }
 
     const supabase = createClient(projectUrl, serviceRoleKey);
-    const resend = new Resend(resendApiKey);
+    sgMail.setApiKey(sendgridApiKey);
 
     const today = new Date();
     const sent: RecordType[] = [];
@@ -243,21 +243,25 @@ Deno.serve(async () => {
         </div>
       `;
 
-      const emailResult = await resend.emails.send({
-        from: "Artist Protection Alliance <onboarding@resend.dev>",
-        to: [email],
-        subject,
-        html,
-        reply_to: "info@artistprotectionalliance.com",
-      });
-
-      if (emailResult.error) {
+            try {
+        await sgMail.send({
+          to: email,
+          from: {
+            email: "compliance@artistprotectionalliance.com",
+            name: "APA Compliance",
+          },
+          subject,
+          html,
+          replyTo: "info@artistprotectionalliance.com",
+        });
+      } catch (sendError: any) {
         skipped.push({
           record_id: record.id,
           email,
           itemName,
-          reason: emailResult.error.message,
+          reason: sendError?.message || "SendGrid send failed",
         });
+
         continue;
       }
 
@@ -269,7 +273,7 @@ Deno.serve(async () => {
         .eq("id", record.id);
 
       sent.push(record);
-    }
+          }
 
     return new Response(
       JSON.stringify({
@@ -281,11 +285,11 @@ Deno.serve(async () => {
       }),
       { headers: { "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (error: any) {
     return new Response(
       JSON.stringify({
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: error?.message || "Compliance alerts failed",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
