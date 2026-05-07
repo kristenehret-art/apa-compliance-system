@@ -1,0 +1,1 @@
+select * from user_compliance_items;

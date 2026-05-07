@@ -48,60 +48,20 @@ type StateOption = {
 
 const stateNameMap: Record<string, string> = {
   AZ: "Arizona",
-  Arizona: "Arizona",
-
   CA: "California",
-  California: "California",
-
   CO: "Colorado",
-  Colorado: "Colorado",
-
-  DC: "District of Columbia",
-
   FL: "Florida",
-  Florida: "Florida",
-
   GA: "Georgia",
-  Georgia: "Georgia",
-
   IL: "Illinois",
-  Illinois: "Illinois",
-
-  MA: "Massachusetts",
-  Massachusetts: "Massachusetts",
-
   MI: "Michigan",
-  Michigan: "Michigan",
-
   NC: "North Carolina",
-  "North Carolina": "North Carolina",
-
   NJ: "New Jersey",
-  "New Jersey": "New Jersey",
-
   NV: "Nevada",
-  Nevada: "Nevada",
-
   NY: "New York",
-  "New York": "New York",
-
-  OH: "Ohio",
-
   OR: "Oregon",
-  Oregon: "Oregon",
-
   PA: "Pennsylvania",
-  Pennsylvania: "Pennsylvania",
-
-  TN: "Tennessee",
-
   TX: "Texas",
-  Texas: "Texas",
-
-  VA: "Virginia",
-
   WA: "Washington",
-  Washington: "Washington",
 };
 
 function formatStateLabel(stateCode: string) {
