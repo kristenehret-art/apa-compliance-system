@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import sgMail from "npm:@sendgrid/mail";
 
 type Member = {
   email: string | null;
@@ -21,11 +20,58 @@ type RecordType = {
   reminder_90_sent_at: string | null;
   reminder_60_sent_at: string | null;
   reminder_30_sent_at: string | null;
+  reminder_60_sent_at: string | null;
   reminder_7_sent_at: string | null;
   reminder_expired_sent_at: string | null;
   compliance_items: ComplianceItem | ComplianceItem[];
   members: Member | Member[];
 };
+
+async function sendComplianceEmail({
+  apiKey,
+  to,
+  subject,
+  html,
+}: {
+  apiKey: string;
+  to: string;
+  subject: string;
+  html: string;
+}) {
+  const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      personalizations: [
+        {
+          to: [{ email: to }],
+        },
+      ],
+      from: {
+        email: "compliance@artistprotectionalliance.com",
+        name: "APA Compliance",
+      },
+      reply_to: {
+        email: "info@artistprotectionalliance.com",
+      },
+      subject,
+      content: [
+        {
+          type: "text/html",
+          value: html,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`SendGrid send failed: ${response.status} ${errorText}`);
+  }
+}
 
 Deno.serve(async () => {
   try {
@@ -33,18 +79,18 @@ Deno.serve(async () => {
     const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
     const sendgridApiKey = Deno.env.get("SENDGRID_COMPLIANCE_API_KEY");
 
-if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
+    if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "Missing PROJECT_URL, SERVICE_ROLE_KEY, or RESEND_API_KEY",
+          error:
+            "Missing PROJECT_URL, SERVICE_ROLE_KEY, or SENDGRID_COMPLIANCE_API_KEY",
         }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const supabase = createClient(projectUrl, serviceRoleKey);
-    sgMail.setApiKey(sendgridApiKey);
 
     const today = new Date();
     const sent: RecordType[] = [];
@@ -174,13 +220,11 @@ if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
           ? "expires in 1 week or less."
           : `expires in ${daysUntilExpiration} days.`;
 
-      // 🔥 BRAND COLOR (YOUR ORANGE)
       const alertColor = "#FC5B00";
 
       const html = `
         <div style="margin:0; padding:0; background:#F5F5F5; font-family: Arial, Helvetica, sans-serif; color:#1A1A1A;">
           <div style="max-width:640px; margin:0 auto; padding:24px 12px;">
-            
             <div style="background:#000000; border-radius:14px 14px 0 0; padding:24px; text-align:center;">
               <div style="font-size:42px; letter-spacing:10px; color:#ffffff; font-family: Georgia, 'Times New Roman', serif;">
                 APA
@@ -194,7 +238,6 @@ if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
             </div>
 
             <div style="background:#ffffff; border:1px solid #2B2B2B; border-top:none; padding:28px; border-radius:0 0 14px 14px;">
-              
               <div style="display:inline-block; background:${alertColor}; color:#ffffff; font-size:12px; font-weight:bold; padding:6px 10px; border-radius:999px; margin-bottom:18px;">
                 Compliance Reminder
               </div>
@@ -243,16 +286,12 @@ if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
         </div>
       `;
 
-            try {
-        await sgMail.send({
+      try {
+        await sendComplianceEmail({
+          apiKey: sendgridApiKey,
           to: email,
-          from: {
-            email: "compliance@artistprotectionalliance.com",
-            name: "APA Compliance",
-          },
           subject,
           html,
-          replyTo: "info@artistprotectionalliance.com",
         });
       } catch (sendError: any) {
         skipped.push({
@@ -265,15 +304,26 @@ if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
         continue;
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from("user_compliance_items")
         .update({
           [sentColumn]: new Date().toISOString(),
         })
         .eq("id", record.id);
 
+      if (updateError) {
+        skipped.push({
+          record_id: record.id,
+          email,
+          itemName,
+          reason: updateError.message || "Reminder sent but timestamp failed",
+        });
+
+        continue;
+      }
+
       sent.push(record);
-          }
+    }
 
     return new Response(
       JSON.stringify({

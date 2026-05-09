@@ -14,6 +14,7 @@ type ComplianceItem = {
   description?: string | null;
   source_url?: string | null;
   required?: boolean | null;
+  requirement_owner?: "artist" | "shop" | "both" | string | null;
 };
 
 type UserComplianceRecord = {
@@ -28,6 +29,9 @@ type UserComplianceRecord = {
   reminder_enabled: boolean;
   last_reminder_days: number | null;
   status: string;
+  document_url?: string | null;
+  document_name?: string | null;
+  document_uploaded_at?: string | null;
   compliance_items?: {
     name: string;
     category: string;
@@ -38,6 +42,10 @@ type UserComplianceRecord = {
     verification_status?: string | null;
     jurisdiction_level?: string | null;
     last_verified?: string | null;
+    action_url?: string | null;
+    action_label?: string | null;
+    requirement_owner?: "artist" | "shop" | "both" | string | null;
+    active?: boolean | null;
   } | null;
 };
 
@@ -46,22 +54,45 @@ type StateOption = {
   label: string;
 };
 
+type ViewMode = "artist" | "shop" | "both";
+
 const stateNameMap: Record<string, string> = {
   AZ: "Arizona",
+  Arizona: "Arizona",
   CA: "California",
+  California: "California",
   CO: "Colorado",
+  Colorado: "Colorado",
+  DC: "District of Columbia",
   FL: "Florida",
+  Florida: "Florida",
   GA: "Georgia",
+  Georgia: "Georgia",
   IL: "Illinois",
+  Illinois: "Illinois",
+  MA: "Massachusetts",
+  Massachusetts: "Massachusetts",
   MI: "Michigan",
+  Michigan: "Michigan",
   NC: "North Carolina",
+  "North Carolina": "North Carolina",
   NJ: "New Jersey",
+  "New Jersey": "New Jersey",
   NV: "Nevada",
+  Nevada: "Nevada",
   NY: "New York",
+  "New York": "New York",
+  OH: "Ohio",
   OR: "Oregon",
+  Oregon: "Oregon",
   PA: "Pennsylvania",
+  Pennsylvania: "Pennsylvania",
+  TN: "Tennessee",
   TX: "Texas",
+  Texas: "Texas",
+  VA: "Virginia",
   WA: "Washington",
+  Washington: "Washington",
 };
 
 function formatStateLabel(stateCode: string) {
@@ -77,6 +108,7 @@ export default function ComplianceDashboard() {
   const [county, setCounty] = useState("");
   const [message, setMessage] = useState("");
   const [locationsReady, setLocationsReady] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("artist");
   const [completionDates, setCompletionDates] = useState<Record<number, string>>(
     {}
   );
@@ -166,6 +198,7 @@ export default function ComplianceDashboard() {
     const { data: complianceItems, error: itemsError } = await supabase
       .from("compliance_items")
       .select("*")
+      .eq("active", true)
       .or(locationFilter)
       .order("name");
 
@@ -187,7 +220,11 @@ export default function ComplianceDashboard() {
           required,
           verification_status,
           jurisdiction_level,
-          last_verified
+          last_verified,
+          action_url,
+          action_label,
+          requirement_owner,
+          active
         )
       `)
       .eq("user_id", userId)
@@ -251,6 +288,60 @@ export default function ComplianceDashboard() {
     loadData();
   }
 
+  async function uploadDocument(record: UserComplianceRecord, file: File) {
+    setMessage("Uploading document...");
+
+    const fileExt = file.name.split(".").pop();
+    const safeExt = fileExt || "file";
+    const filePath = `${record.user_id}/${record.id}/${Date.now()}.${safeExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("compliance-documents")
+      .upload(filePath, file, {
+        upsert: true,
+      });
+
+    if (uploadError) {
+      setMessage(uploadError.message);
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("user_compliance_items")
+      .update({
+        document_url: filePath,
+        document_name: file.name,
+        document_uploaded_at: new Date().toISOString(),
+      })
+      .eq("id", record.id);
+
+    if (updateError) {
+      setMessage(updateError.message);
+      return;
+    }
+
+    setMessage("Document uploaded successfully.");
+    loadData();
+  }
+
+  async function viewDocument(record: UserComplianceRecord) {
+    if (!record.document_url) {
+      setMessage("No document found for this item.");
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from("compliance-documents")
+      .createSignedUrl(record.document_url, 60 * 60);
+
+    if (error || !data?.signedUrl) {
+      setMessage(error?.message || "Could not open document.");
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   function addMonths(date: string, months: number) {
     const d = new Date(date);
     d.setMonth(d.getMonth() + months);
@@ -308,6 +399,70 @@ export default function ComplianceDashboard() {
     if (status === "Expiring Soon") return "#92400e";
     if (status === "Not Started") return "#374151";
     return "#14532d";
+  }
+
+  function getRequirementOwner(record: UserComplianceRecord) {
+    return record.compliance_items?.requirement_owner || "artist";
+  }
+
+  function shouldShowForViewMode(record: UserComplianceRecord) {
+    const owner = getRequirementOwner(record);
+
+    if (viewMode === "both") return true;
+    if (owner === "both") return true;
+
+    return owner === viewMode;
+  }
+
+  function recordHasUsefulData(record: UserComplianceRecord) {
+    return Boolean(
+      record.completed_date ||
+        record.expires_date ||
+        record.next_reminder_date ||
+        record.document_url ||
+        record.document_name
+    );
+  }
+
+  function dedupeRecords(inputRecords: UserComplianceRecord[]) {
+    const map = new Map<string, UserComplianceRecord>();
+
+    for (const record of inputRecords) {
+      if (record.compliance_items?.active === false) {
+        continue;
+      }
+
+      const key = [
+        record.compliance_items?.name || "unknown",
+        record.compliance_items?.category || "unknown",
+        record.location_state || "state",
+        record.location_county || "statewide",
+        getRequirementOwner(record),
+      ]
+        .join("|")
+        .toLowerCase();
+
+      const existing = map.get(key);
+
+      if (!existing) {
+        map.set(key, record);
+        continue;
+      }
+
+      const existingHasData = recordHasUsefulData(existing);
+      const incomingHasData = recordHasUsefulData(record);
+
+      if (!existingHasData && incomingHasData) {
+        map.set(key, record);
+        continue;
+      }
+
+      if (record.id > existing.id && existingHasData === incomingHasData) {
+        map.set(key, record);
+      }
+    }
+
+    return Array.from(map.values());
   }
 
   function getPreviewDates(record: UserComplianceRecord) {
@@ -384,33 +539,52 @@ export default function ComplianceDashboard() {
     loadData();
   }
 
-  const notStarted = records.filter(
+  const visibleRecords = dedupeRecords(records).filter(shouldShowForViewMode);
+
+  const artistRecords = visibleRecords.filter((r) => {
+    const owner = getRequirementOwner(r);
+    return owner === "artist" || owner === "both";
+  });
+
+  const shopRecords = visibleRecords.filter((r) => {
+    const owner = getRequirementOwner(r);
+    return owner === "shop" || owner === "both";
+  });
+
+  const notStarted = visibleRecords.filter(
     (r) => getStatus(r.expires_date) === "Not Started"
   );
 
-  const active = records.filter((r) => getStatus(r.expires_date) === "Active");
-
-  const expiring = records.filter(
-    (r) => getStatus(r.expires_date) === "Expiring Soon"
-  );
-
-  const expired = records.filter(
-    (r) => getStatus(r.expires_date) === "Expired"
-  );
-
-  const needsAction = [...expired, ...expiring, ...notStarted].sort(
-    (a, b) => getStatusPriority(a) - getStatusPriority(b)
-  );
-
-  const completed = records.filter(
+  const active = visibleRecords.filter(
     (r) => getStatus(r.expires_date) === "Active"
   );
 
-  const completedCount = records.filter(
+  const expiring = visibleRecords.filter(
+    (r) => getStatus(r.expires_date) === "Expiring Soon"
+  );
+
+  const expired = visibleRecords.filter(
+    (r) => getStatus(r.expires_date) === "Expired"
+  );
+
+  function getNeedsAction(list: UserComplianceRecord[]) {
+    return [...list]
+      .filter((r) => getStatus(r.expires_date) !== "Active")
+      .sort((a, b) => getStatusPriority(a) - getStatusPriority(b));
+  }
+
+  function getCompleted(list: UserComplianceRecord[]) {
+    return list.filter((r) => getStatus(r.expires_date) === "Active");
+  }
+
+  const needsAction = getNeedsAction(visibleRecords);
+  const completed = getCompleted(visibleRecords);
+
+  const completedCount = visibleRecords.filter(
     (r) => r.completed_date && r.expires_date
   ).length;
 
-  const totalCount = records.length;
+  const totalCount = visibleRecords.length;
 
   const progressPercent =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
@@ -418,6 +592,7 @@ export default function ComplianceDashboard() {
   function renderRecord(record: UserComplianceRecord, editable: boolean) {
     const status = getStatus(record.expires_date);
     const previewDates = getPreviewDates(record);
+    const owner = getRequirementOwner(record);
 
     return (
       <div key={record.id} style={styles.record}>
@@ -426,11 +601,20 @@ export default function ComplianceDashboard() {
             <strong>{record.compliance_items?.name}</strong>
 
             <div style={styles.badgeRow}>
+              <span style={owner === "shop" ? styles.shopPill : styles.artistPill}>
+                {owner === "shop"
+                  ? "Shop-level"
+                  : owner === "both"
+                  ? "Artist + Shop"
+                  : "Artist-level"}
+              </span>
+
               {record.compliance_items?.verification_status === "verified" && (
                 <span style={styles.verifiedBadge}>Verified</span>
               )}
 
-              {record.compliance_items?.verification_status === "needs_review" && (
+              {record.compliance_items?.verification_status ===
+                "needs_review" && (
                 <span style={styles.reviewBadge}>Needs Review</span>
               )}
 
@@ -457,20 +641,77 @@ export default function ComplianceDashboard() {
               </p>
             )}
 
-            {record.compliance_items?.source_url && (
-              <a
-                href={record.compliance_items.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.sourceLink}
-              >
-                View official source
-              </a>
-            )}
+            <div style={styles.linkRow}>
+              {record.compliance_items?.source_url && (
+                <a
+                  href={record.compliance_items.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={styles.sourceLink}
+                >
+                  View official source
+                </a>
+              )}
+
+              {record.compliance_items?.action_url && (
+                <a
+                  href={record.compliance_items.action_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={styles.actionLink}
+                >
+                  {record.compliance_items.action_label ||
+                    "Complete / Renew This Requirement"}
+                </a>
+              )}
+            </div>
 
             <p>Completed: {record.completed_date || "Not entered"}</p>
             <p>Expires: {record.expires_date || "Not entered"}</p>
             <p>Next Reminder: {record.next_reminder_date || "None"}</p>
+
+            <div style={styles.documentBox}>
+              <p style={styles.documentLabel}>
+                Document: {record.document_name || "No document uploaded"}
+              </p>
+
+              <div style={styles.documentActions}>
+                {record.document_url && (
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => viewDocument(record)}
+                  >
+                    View Document
+                  </button>
+                )}
+
+                <label style={styles.uploadButton}>
+                  {record.document_name ? "Replace Document" : "Upload Document"}
+
+                  <input
+                    type="file"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+
+                      if (file) {
+                        uploadDocument(record, file);
+                      }
+
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+
+              {record.document_uploaded_at && (
+                <p style={styles.documentMeta}>
+                  Uploaded:{" "}
+                  {new Date(record.document_uploaded_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
           </div>
 
           <div style={styles.toggleContainer}>
@@ -544,6 +785,40 @@ export default function ComplianceDashboard() {
     );
   }
 
+  function renderRequirementSection(
+    title: string,
+    recordsForSection: UserComplianceRecord[]
+  ) {
+    const sectionNeedsAction = getNeedsAction(recordsForSection);
+    const sectionCompleted = getCompleted(recordsForSection);
+
+    return (
+      <>
+        <section style={styles.card}>
+          <h2 style={styles.sectionTitle}>{title} — Needs Action</h2>
+
+          {sectionNeedsAction.length === 0 && (
+            <p style={styles.emptyMessage}>
+              No required items currently need action.
+            </p>
+          )}
+
+          {sectionNeedsAction.map((record) => renderRecord(record, true))}
+        </section>
+
+        <section style={styles.card}>
+          <h2 style={styles.sectionTitle}>{title} — Completed Records</h2>
+
+          {sectionCompleted.length === 0 && (
+            <p style={styles.emptyMessage}>No active compliance records yet.</p>
+          )}
+
+          {sectionCompleted.map((record) => renderRecord(record, false))}
+        </section>
+      </>
+    );
+  }
+
   return (
     <main style={styles.page}>
       <header style={styles.header}>
@@ -556,7 +831,8 @@ export default function ComplianceDashboard() {
         <div>
           <h1 style={styles.title}>Compliance Dashboard</h1>
           <p style={styles.subtitle}>
-            Track requirements, expiration dates, and automated reminders.
+            Track requirements, expiration dates, documents, and automated
+            reminders.
           </p>
         </div>
       </header>
@@ -622,6 +898,52 @@ export default function ComplianceDashboard() {
           </select>
         </div>
 
+        <div style={styles.viewModeBox}>
+          <div>
+            <strong>Viewing requirements as:</strong>
+            <p style={styles.helperText}>
+              Artist view is for individual tattooers. Shop view includes
+              studio-level records like permits, sharps disposal, and autoclave
+              logs.
+            </p>
+          </div>
+
+          <div style={styles.segmentedControl}>
+            <button
+              type="button"
+              style={{
+                ...styles.segmentButton,
+                ...(viewMode === "artist" ? styles.segmentButtonActive : {}),
+              }}
+              onClick={() => setViewMode("artist")}
+            >
+              Artist
+            </button>
+
+            <button
+              type="button"
+              style={{
+                ...styles.segmentButton,
+                ...(viewMode === "shop" ? styles.segmentButtonActive : {}),
+              }}
+              onClick={() => setViewMode("shop")}
+            >
+              Shop
+            </button>
+
+            <button
+              type="button"
+              style={{
+                ...styles.segmentButton,
+                ...(viewMode === "both" ? styles.segmentButtonActive : {}),
+              }}
+              onClick={() => setViewMode("both")}
+            >
+              Both
+            </button>
+          </div>
+        </div>
+
         <div style={styles.progressBox}>
           <div style={styles.progressHeader}>
             <strong>
@@ -642,34 +964,24 @@ export default function ComplianceDashboard() {
 
           <span style={styles.progressSubtext}>
             Your required compliance items load automatically when your location
-            is selected.
+            is selected. Duplicate master records are visually collapsed so the
+            dashboard stays clean.
           </span>
         </div>
 
         {message && <p style={styles.message}>{message}</p>}
       </section>
 
-      <section style={styles.card}>
-        <h2 style={styles.sectionTitle}>Required — Needs Action</h2>
-
-        {needsAction.length === 0 && (
-          <p style={styles.emptyMessage}>
-            No required items currently need action.
-          </p>
-        )}
-
-        {needsAction.map((record) => renderRecord(record, true))}
-      </section>
-
-      <section style={styles.card}>
-        <h2 style={styles.sectionTitle}>Completed Compliance Records</h2>
-
-        {completed.length === 0 && (
-          <p style={styles.emptyMessage}>No active compliance records yet.</p>
-        )}
-
-        {completed.map((record) => renderRecord(record, false))}
-      </section>
+      {viewMode === "both" ? (
+        <>
+          {renderRequirementSection("Artist Requirements", artistRecords)}
+          {renderRequirementSection("Shop Requirements", shopRecords)}
+        </>
+      ) : viewMode === "shop" ? (
+        renderRequirementSection("Shop Requirements", shopRecords)
+      ) : (
+        renderRequirementSection("Artist Requirements", artistRecords)
+      )}
     </main>
   );
 }
@@ -773,6 +1085,17 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: "0 0 18px rgba(252,91,0,0.25)",
   },
 
+  secondaryButton: {
+    background: "#111111",
+    color: "#ffffff",
+    border: "1px solid #2B2B2B",
+    padding: "10px 14px",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+
   message: {
     color: "#FC5B00",
     fontWeight: 600,
@@ -780,6 +1103,44 @@ const styles: Record<string, CSSProperties> = {
 
   emptyMessage: {
     color: "#FC5B00",
+  },
+
+  viewModeBox: {
+    marginTop: 10,
+    marginBottom: 18,
+    padding: 16,
+    borderRadius: 14,
+    background: "#111111",
+    border: "1px solid #1f1f1f",
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 14,
+    alignItems: "center",
+  },
+
+  segmentedControl: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+
+  segmentButton: {
+    background: "#0d0d0d",
+    color: "#ffffff",
+    border: "1px solid #2B2B2B",
+    padding: "10px 14px",
+    borderRadius: 999,
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+
+  segmentButtonActive: {
+    background: "#FC5B00",
+    color: "#ffffff",
+    border: "1px solid #FC5B00",
+    boxShadow: "0 0 18px rgba(252,91,0,0.25)",
   },
 
   progressBox: {
@@ -863,6 +1224,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     color: "#9CA3AF",
     lineHeight: 1.4,
+    margin: "4px 0 0",
   },
 
   previewBox: {
@@ -925,6 +1287,30 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid #FC5B00",
   },
 
+  artistPill: {
+    display: "inline-block",
+    width: "fit-content",
+    background: "#111827",
+    color: "#93C5FD",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "bold",
+    border: "1px solid #1E3A8A",
+  },
+
+  shopPill: {
+    display: "inline-block",
+    width: "fit-content",
+    background: "#2a1606",
+    color: "#FDBA74",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "bold",
+    border: "1px solid #FC5B00",
+  },
+
   descriptionText: {
     color: "#D1D5DB",
     fontSize: 13,
@@ -937,6 +1323,21 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 13,
     fontWeight: "bold",
     textDecoration: "underline",
+  },
+
+  actionLink: {
+    color: "#FC5B00",
+    fontSize: 13,
+    fontWeight: "bold",
+    textDecoration: "underline",
+  },
+
+  linkRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 14,
+    marginTop: 8,
+    marginBottom: 8,
   },
 
   badgeRow: {
@@ -971,5 +1372,45 @@ const styles: Record<string, CSSProperties> = {
     padding: "4px 8px",
     borderRadius: 999,
     fontSize: 11,
+  },
+
+  documentBox: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 12,
+    background: "#0d0d0d",
+    border: "1px solid #2B2B2B",
+  },
+
+  documentLabel: {
+    color: "#ffffff",
+    fontSize: 13,
+    margin: "0 0 10px",
+    fontWeight: "bold",
+  },
+
+  documentActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
+  },
+
+  uploadButton: {
+    display: "inline-block",
+    background: "#1f1f1f",
+    color: "#FC5B00",
+    border: "1px solid #FC5B00",
+    padding: "10px 14px",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+
+  documentMeta: {
+    color: "#9CA3AF",
+    fontSize: 12,
+    margin: "10px 0 0",
   },
 };
