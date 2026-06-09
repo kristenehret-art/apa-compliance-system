@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (error) {
       console.error("ACCEPT QUOTE SUPABASE ERROR:", error);
       return NextResponse.json(
-        { error: "Could not accept quote.", details: error },
+        { error: "Unable to accept quote at this time.", details: error },
         { status: 500 }
       );
     }
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     console.error("ACCEPT QUOTE API ERROR:", error);
 
     return NextResponse.json(
-      { error: "Accept quote server error." },
+      { error: "Server error while accepting quote." },
       { status: 500 }
     );
   }

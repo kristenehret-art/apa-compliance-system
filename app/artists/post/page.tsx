@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 export default function PostArtistProfilePage() {
   const [form, setForm] = useState({
@@ -12,7 +14,7 @@ export default function PostArtistProfilePage() {
     state: "",
     tattoo_styles: "",
     years_experience: "",
-    looking_for: "Shop Position",
+    looking_for: "Seeking Shop Position",
     willing_to_travel: "Local only",
     instagram_url: "",
     portfolio_url: "",
@@ -21,6 +23,20 @@ export default function PostArtistProfilePage() {
 
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  function normalizeInstagram(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) return "";
+
+  if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+    return cleaned;
+  }
+
+  const handle = cleaned.replace("@", "");
+
+  return `https://instagram.com/${handle}`;
+}
 
   function updateField(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -29,11 +45,30 @@ export default function PostArtistProfilePage() {
   async function submitProfile(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+const {
+  data: { user },
+} = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("artist_profiles").insert({
-      ...form,
-      status: "pending",
-    });
+if (!user) {
+  alert("Please log in before posting an Open to Work profile.");
+  setLoading(false);
+  return;
+}
+
+  const { data: existingProfile } = await supabase
+  .from("artist_profiles")
+  .select("compliance_status_visible")
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+   const { error } = await supabase.from("artist_profiles").insert({
+  ...form,
+  instagram_url: normalizeInstagram(form.instagram_url),
+  user_id: user.id,
+  compliance_status_visible:
+    existingProfile?.compliance_status_visible ?? false,
+  status: "pending",
+});
 
     setLoading(false);
 
@@ -48,13 +83,32 @@ export default function PostArtistProfilePage() {
 
   if (submitted) {
     return (
-      <main style={{ minHeight: "100vh", background: "#0f0f0f", color: "white", padding: "40px" }}>
-        <div style={{ maxWidth: "700px", margin: "0 auto", background: "#1a1a1a", padding: "30px", borderRadius: "18px" }}>
-          <h1>Profile submitted!</h1>
-          <p style={{ color: "#cfcfcf" }}>
-            Your Open to Work profile has been submitted for APA review. Once approved, it will appear in the artist directory.
+      <main style={pageStyle}>
+        <div style={successCardStyle}>
+          <h1
+            style={{
+              fontSize: "32px",
+              marginBottom: "12px",
+              color: "#ff5c00",
+            }}
+          >
+            Profile Submitted
+          </h1>
+
+          <p style={{ color: "#cfcfcf", lineHeight: 1.6 }}>
+            Your Open to Work profile has been submitted for APA review. Once approved, it will appear in the artist directory within 24 hours. 
+        
           </p>
-          <a href="/artists" style={{ color: "#d4af37", fontWeight: "bold" }}>
+
+          <a
+            href="/artists"
+            style={{
+              color: "#ff5c00",
+              fontWeight: "bold",
+              marginTop: "20px",
+              display: "inline-block",
+            }}
+          >
             Back to Artists
           </a>
         </div>
@@ -63,117 +117,189 @@ export default function PostArtistProfilePage() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0f0f0f", color: "white", padding: "40px" }}>
-      <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-        <h1 style={{ fontSize: "38px", marginBottom: "10px" }}>
-          Create Open to Work Profile
-        </h1>
+    <main style={pageStyle}>
+      <div style={containerStyle}>
+        <div style={headerCardStyle}>
+          <h1 style={titleStyle}>Create Open to Work Profile</h1>
 
-        <p style={{ color: "#cfcfcf", marginBottom: "30px" }}>
-          Let shops discover you for positions, guest spots, conventions, and travel opportunities.
-        </p>
+          <p style={subtitleStyle}>
+            Let shops discover you for positions, guest spots,
+            conventions, and travel opportunities.
+          </p>
+        </div>
 
-        <form onSubmit={submitProfile} style={{ display: "grid", gap: "16px" }}>
-          <label>
-            Artist Name
-            <input required value={form.artist_name} onChange={(e) => updateField("artist_name", e.target.value)} style={inputStyle} />
-          </label>
+        <form onSubmit={submitProfile} style={formStyle}>
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Artist Name</label>
+            <input
+              required
+              value={form.artist_name}
+              onChange={(e) =>
+                updateField("artist_name", e.target.value)
+              }
+              style={inputStyle}
+            />
+          </div>
 
-          <label>
-            Contact Email
-            <input required type="email" value={form.email} onChange={(e) => updateField("email", e.target.value)} style={inputStyle} />
-          </label>
+          <div style={twoColumnGrid}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Contact Email</label>
+              <input
+                required
+                type="email"
+                value={form.email}
+                onChange={(e) =>
+                  updateField("email", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label>
-            Phone
-            <input value={form.phone} onChange={(e) => updateField("phone", e.target.value)} style={inputStyle} />
-          </label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Phone</label>
+              <input
+                value={form.phone}
+                onChange={(e) =>
+                  updateField("phone", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
 
-          <label>
-            City
-            <input value={form.city} onChange={(e) => updateField("city", e.target.value)} style={inputStyle} />
-          </label>
+          <div style={twoColumnGrid}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>City</label>
+              <input
+                value={form.city}
+                onChange={(e) =>
+                  updateField("city", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label>
-            State
-            <input value={form.state} onChange={(e) => updateField("state", e.target.value)} style={inputStyle} />
-          </label>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>State</label>
+              <input
+                value={form.state}
+                onChange={(e) =>
+                  updateField("state", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
 
-          <label>
-            Tattoo Styles
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Tattoo Styles</label>
+
             <input
               placeholder="Black & grey, realism, traditional, fine line..."
               value={form.tattoo_styles}
-              onChange={(e) => updateField("tattoo_styles", e.target.value)}
+              onChange={(e) =>
+                updateField("tattoo_styles", e.target.value)
+              }
               style={inputStyle}
             />
-          </label>
+          </div>
 
-          <label>
-            Years Experience
-            <input
-              placeholder="Example: 3 years"
-              value={form.years_experience}
-              onChange={(e) => updateField("years_experience", e.target.value)}
-              style={inputStyle}
-            />
-          </label>
+          <div style={twoColumnGrid}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Years Experience</label>
 
-          <label>
-            Looking For
-            <select value={form.looking_for} onChange={(e) => updateField("looking_for", e.target.value)} style={inputStyle}>
-              <option>Shop Position</option>
-              <option>Guest Spots</option>
-              <option>Convention Opportunities</option>
-              <option>Apprenticeship</option>
-              <option>Open to Multiple Opportunities</option>
-            </select>
-          </label>
+              <input
+                placeholder="Example: 3 years"
+                value={form.years_experience}
+                onChange={(e) =>
+                  updateField("years_experience", e.target.value)
+                }
+                style={inputStyle}
+              />
+            </div>
 
-          <label>
-            Willing to Travel
-            <select value={form.willing_to_travel} onChange={(e) => updateField("willing_to_travel", e.target.value)} style={inputStyle}>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Looking For</label>
+
+              <select
+                value={form.looking_for}
+                onChange={(e) =>
+                  updateField("looking_for", e.target.value)
+                }
+                style={selectStyle}
+              >
+<option>Tattoo Artist Position</option>
+<option>Piercer Position</option>
+<option>Shop Manager</option>
+<option>Shop Hand / Front Desk</option>
+<option>Apprenticeship</option>
+<option>Guest Spots</option>
+<option>Convention Opportunities</option>
+<option>Travel / Guest Artist</option>
+<option>Open to Multiple Opportunities</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Willing to Travel</label>
+
+            <select
+              value={form.willing_to_travel}
+              onChange={(e) =>
+                updateField("willing_to_travel", e.target.value)
+              }
+              style={selectStyle}
+            >
               <option>Local only</option>
               <option>Within my state</option>
               <option>Regional travel</option>
               <option>Nationwide travel</option>
             </select>
-          </label>
+          </div>
 
-          <label>
-            Instagram URL
-            <input value={form.instagram_url} onChange={(e) => updateField("instagram_url", e.target.value)} style={inputStyle} />
-          </label>
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Instagram Handle or URL</label>
 
-          <label>
-            Portfolio URL
-            <input value={form.portfolio_url} onChange={(e) => updateField("portfolio_url", e.target.value)} style={inputStyle} />
-          </label>
+            <input
+              value={form.instagram_url}
+              onChange={(e) =>
+                updateField("instagram_url", e.target.value)
+              }
+              style={inputStyle}
+            />
+          </div>
 
-          <label>
-            Short Bio
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Portfolio URL</label>
+
+            <input
+              value={form.portfolio_url}
+              onChange={(e) =>
+                updateField("portfolio_url", e.target.value)
+              }
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Short Bio</label>
+
             <textarea
               required
               placeholder="Tell shops what you specialize in, what you're looking for, and why they should reach out."
               value={form.bio}
-              onChange={(e) => updateField("bio", e.target.value)}
+              onChange={(e) =>
+                updateField("bio", e.target.value)
+              }
               style={textareaStyle}
             />
-          </label>
+          </div>
 
           <button
             type="submit"
             disabled={loading}
-            style={{
-              background: "#d4af37",
-              color: "#111",
-              padding: "16px",
-              borderRadius: "12px",
-              border: "none",
-              fontWeight: "bold",
-              fontSize: "16px",
-              cursor: "pointer",
-            }}
+            style={submitButtonStyle}
           >
             {loading ? "Submitting..." : "Submit Profile"}
           </button>
@@ -183,17 +309,106 @@ export default function PostArtistProfilePage() {
   );
 }
 
+const pageStyle = {
+  minHeight: "100vh",
+  background: "#0f0f0f",
+  color: "white",
+  padding: "60px 20px",
+};
+
+const containerStyle = {
+  width: "100%",
+  maxWidth: "860px",
+  margin: "0 auto",
+};
+
+const headerCardStyle = {
+  marginBottom: "32px",
+};
+
+const titleStyle = {
+  fontSize: "42px",
+  fontWeight: 700,
+  marginBottom: "12px",
+  color: "#ff5c00",
+};
+
+const subtitleStyle = {
+  color: "#b0b0b0",
+  fontSize: "16px",
+  lineHeight: 1.6,
+};
+
+const formStyle = {
+  background: "#161616",
+  border: "1px solid #242424",
+  borderRadius: "22px",
+  padding: "32px",
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: "22px",
+};
+
+const fieldStyle = {
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: "8px",
+};
+
+const labelStyle = {
+  fontSize: "15px",
+  fontWeight: 600,
+  color: "#ff5c00",
+};
+
+const twoColumnGrid = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "18px",
+};
+
 const inputStyle = {
   width: "100%",
-  padding: "14px",
-  borderRadius: "10px",
+  padding: "14px 16px",
+  borderRadius: "12px",
   border: "1px solid #333",
-  background: "#1a1a1a",
+  background: "#111",
   color: "white",
-  marginTop: "6px",
+  fontSize: "15px",
+  outline: "none",
+  boxSizing: "border-box" as const,
+};
+
+const selectStyle = {
+  ...inputStyle,
+  height: "52px",
+  cursor: "pointer",
 };
 
 const textareaStyle = {
   ...inputStyle,
-  minHeight: "140px",
+  minHeight: "150px",
+  resize: "vertical" as const,
+};
+
+const submitButtonStyle = {
+  background: "#ff5c00",
+  color: "#111",
+  padding: "16px",
+  borderRadius: "14px",
+  border: "none",
+  fontWeight: "bold",
+  fontSize: "16px",
+  cursor: "pointer",
+  marginTop: "10px",
+};
+
+const successCardStyle = {
+  maxWidth: "700px",
+  margin: "0 auto",
+  background: "linear-gradient(135deg, rgba(26,26,26,0.98), rgba(8,8,8,0.98))",
+  border: "1px solid rgba(255,92,0,0.45)",
+  padding: "40px",
+  borderRadius: "24px",
+  boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
 };

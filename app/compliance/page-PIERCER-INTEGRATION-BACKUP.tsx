@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase";
 import AllianceGate from "@/components/AllianceGate";
 
 type ComplianceItem = {
@@ -49,7 +49,6 @@ type UserComplianceRecord = {
     action_label?: string | null;
     requirement_owner?: "artist" | "shop" | "both" | string | null;
     active?: boolean | null;
-    profession_types?: string[] | null;
   } | null;
 };
 
@@ -63,37 +62,12 @@ type DocumentArchiveRecord = {
   archived_at: string;
 };
 
-type ComplianceLogType = {
-  id: number;
-  key: string;
-  name: string;
-  description: string;
-  frequency: string;
-  requirement_owner: string;
-};
-
-type ComplianceLogEntry = {
-  id: number;
-  log_type_key: string;
-  entry_date: string;
-  result: string | null;
-  notes: string | null;
-  fields: Record<string, any>;
-  machine_id?: string | null;
-  service_performed?: string | null;
-  technician_vendor?: string | null;
-};
-
 type StateOption = {
   value: string;
   label: string;
 };
 
 type ViewMode = "artist" | "shop" | "both";
-type ProfessionType =
-  | "tattoo_artist"
-  | "piercer"
-  | "shop";
 type StatusFilter =
   | "all"
   | "needs_action"
@@ -114,7 +88,6 @@ const stateNameMap: Record<string, string> = {
   Florida: "Florida",
   GA: "Georgia",
   Georgia: "Georgia",
-  ID: "Idaho",
   IL: "Illinois",
   Illinois: "Illinois",
   MA: "Massachusetts",
@@ -125,22 +98,18 @@ const stateNameMap: Record<string, string> = {
   "North Carolina": "North Carolina",
   NJ: "New Jersey",
   "New Jersey": "New Jersey",
-  NM: "New Mexico",
   NV: "Nevada",
   Nevada: "Nevada",
   NY: "New York",
   "New York": "New York",
   OH: "Ohio",
-  OK: "Oklahoma",
   OR: "Oregon",
   Oregon: "Oregon",
   PA: "Pennsylvania",
   Pennsylvania: "Pennsylvania",
-  SC: "South Carolina",
   TN: "Tennessee",
   TX: "Texas",
   Texas: "Texas",
-  UT: "Utah",
   VA: "Virginia",
   WA: "Washington",
   Washington: "Washington",
@@ -182,7 +151,6 @@ function getDisplayRequirementCategory(record: UserComplianceRecord) {
 }
 
 export default function ComplianceDashboard() {
-  const supabase = createClient();
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [records, setRecords] = useState<UserComplianceRecord[]>([]);
   const [stateOptions, setStateOptions] = useState<StateOption[]>([]);
@@ -192,8 +160,6 @@ export default function ComplianceDashboard() {
   const [message, setMessage] = useState("");
   const [locationsReady, setLocationsReady] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("artist");
-  const [professionType, setProfessionType] =
-  useState<ProfessionType>("tattoo_artist");
   const [shareComplianceStatus, setShareComplianceStatus] = useState(false);
   const [documentHistory, setDocumentHistory] = useState<
     Record<number, DocumentArchiveRecord[]>
@@ -209,188 +175,52 @@ const [documentSearchTerm, setDocumentSearchTerm] = useState("");
 const [showExcludedItems, setShowExcludedItems] = useState(false);
 const [documentVaultOpen, setDocumentVaultOpen] = useState(false);
 
-const [logTypes, setLogTypes] =
-  useState<ComplianceLogType[]>([]);
-
-const [logEntries, setLogEntries] =
-  useState<ComplianceLogEntry[]>([]);
-
-const [showLogs, setShowLogs] =
-  useState(true);
-const [activeLogKey, setActiveLogKey] = useState<string | null>(null);
-const [openLogHistory, setOpenLogHistory] =
-  useState<string | null>(null);
-const [sporeTestForm, setSporeTestForm] = useState({
-  entry_date: "",
-  result: "pass",
-  lab_or_incubator: "",
-  lot_number: "",
-  notes: "",
-});
-const [autoclaveForm, setAutoclaveForm] = useState({
-  entry_date: "",
-  machine_id: "",
-  service_performed: "",
-  technician_vendor: "",
-  notes: "",
-});
-const [sharpsForm, setSharpsForm] = useState({
-  entry_date: "",
-  vendor: "",
-  manifest_number: "",
-  container_count: "",
-  notes: "",
-});
-const [exposureForm, setExposureForm] = useState({
-  entry_date: "",
-  incident_type: "",
-  individuals_involved: "",
-  immediate_actions: "",
-  medical_follow_up_required: "no",
-  outcome_resolution: "",
-  notes: "",
-});
-const [sterilizationCycleForm, setSterilizationCycleForm] = useState({
-  entry_date: "",
-  load_number: "",
-  autoclave_used: "",
-  operator: "",
-  cycle_result: "pass",
-  notes: "",
-});
-const [jewelrySterilizationForm, setJewelrySterilizationForm] = useState({
-  entry_date: "",
-  jewelry_batch: "",
-  material: "",
-  method: "",
-  operator: "",
-  result: "pass",
-  notes: "",
-});
-const [isAllianceMember, setIsAllianceMember] =
-  useState(false);
-
-const [profileLoaded, setProfileLoaded] =
-  useState(false);
-
-const COMPLIANCE_STATE_KEY = "apa_compliance_state";
-const COMPLIANCE_COUNTY_KEY = "apa_compliance_county";
+const [isAllianceMember] = useState(true);
 
 const userId = 1;
-const [authUserId, setAuthUserId] = useState<string | null>(null);
 
 useEffect(() => {
-  hydrateProfile();
   loadLocationOptions();
   loadSharingPreference();
 }, []);
 
 useEffect(() => {
-  if (!locationsReady || !state || !authUserId) return;
+  if (!locationsReady || !state) return;
   autoPopulate();
-}, [locationsReady, state, county, authUserId]);
-async function hydrateProfile() {
-  try {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+}, [locationsReady, state, county]);
 
-    if (authError || !user) {
-      console.error(
-        "PROFILE HYDRATION AUTH ERROR:",
-        authError
-      );
+  async function loadSharingPreference() {
+    const { data, error } = await supabase
+      .from("members")
+      .select("share_compliance_status")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!error && data) {
+      setShareComplianceStatus(Boolean(data.share_compliance_status));
+    }
+  }
+
+  async function toggleShareComplianceStatus() {
+    const nextValue = !shareComplianceStatus;
+
+    const { error } = await supabase
+      .from("members")
+      .update({ share_compliance_status: nextValue })
+      .eq("id", userId);
+
+    if (error) {
+      setMessage(error.message);
       return;
     }
 
-setAuthUserId(user.id);
-
-    const { data: profile, error: profileError } =
-      await supabase
-        .from("profiles")
-        .select("profession_type, membership_tier")
-        .eq("id", user.id)
-        .single();
-
-    if (profileError) {
-      console.error(
-        "PROFILE HYDRATION PROFILE ERROR:",
-        profileError
-      );
-      return;
-    }
-
-    if (
-      profile?.profession_type === "piercer" ||
-      profile?.profession_type === "shop" ||
-      profile?.profession_type === "tattoo_artist"
-    ) {
-      setProfessionType(profile.profession_type);
-    }
-if (
-  profile?.membership_tier === "alliance" ||
-  profile?.membership_tier === "admin"
-) {
-  setIsAllianceMember(true);
-}
-    setProfileLoaded(true);
-  } catch (error) {
-    console.error(
-      "PROFILE HYDRATION FAILED:",
-      error
+    setShareComplianceStatus(nextValue);
+    setMessage(
+      nextValue
+        ? "Compliance status sharing turned on."
+        : "Compliance status sharing turned off."
     );
   }
-}
-async function loadSharingPreference() {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return;
-  }
-
-  const { data } = await supabase
-    .from("artist_profiles")
-    .select("compliance_status_visible")
-    .eq("user_id", user.id)
-    .limit(1);
-
-  setShareComplianceStatus(
-    Boolean(data?.[0]?.compliance_status_visible)
-  );
-}
-async function toggleShareComplianceStatus() {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    setMessage("You must be logged in to change sharing settings.");
-    return;
-  }
-
-  const nextValue = !shareComplianceStatus;
-
-  const { error } = await supabase
-    .from("artist_profiles")
-    .update({ compliance_status_visible: nextValue })
-    .eq("user_id", user.id);
-
-  if (error) {
-    setMessage(error.message);
-    return;
-  }
-
-  setShareComplianceStatus(nextValue);
-  setMessage(
-    nextValue
-      ? "Compliance status sharing turned on."
-      : "Compliance status sharing turned off."
-  );
-}
 
   async function loadLocationOptions() {
     setMessage("Loading locations...");
@@ -418,39 +248,19 @@ async function toggleShareComplianceStatus() {
 
     setStateOptions(formattedStates);
 
-    const savedState =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem(COMPLIANCE_STATE_KEY)
-        : null;
-
-    const savedCounty =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem(COMPLIANCE_COUNTY_KEY)
-        : null;
-
     const defaultState = uniqueStates.includes("AZ")
       ? "AZ"
       : uniqueStates[0] || "";
 
-    const selectedState =
-      savedState && uniqueStates.includes(savedState)
-        ? savedState
-        : defaultState;
-
-    if (!selectedState) {
+    if (!defaultState) {
       setMessage("No active compliance locations found.");
       return;
     }
 
-    const counties = await loadCountiesForState(selectedState);
+    const counties = await loadCountiesForState(defaultState);
 
-    const selectedCounty =
-      savedCounty && counties.includes(savedCounty)
-        ? savedCounty
-        : counties[0] || "";
-
-    setState(selectedState);
-    setCounty(selectedCounty);
+    setState(defaultState);
+    setCounty(counties[0] || "");
     setLocationsReady(true);
     setMessage("");
   }
@@ -481,8 +291,8 @@ async function toggleShareComplianceStatus() {
     if (!state) return;
 
     const locationFilter = county
-  ? `state.is.null,and(state.eq.${state},county.is.null),and(state.eq.${state},county.eq.${county})`
-  : `state.is.null,and(state.eq.${state},county.is.null)`;
+      ? `applies_to.eq.national,and(state.eq.${state},county.is.null),and(state.eq.${state},county.eq.${county})`
+      : `applies_to.eq.national,and(state.eq.${state},county.is.null)`;
 
     const { data: complianceItems, error: itemsError } = await supabase
       .from("compliance_items")
@@ -514,12 +324,11 @@ async function toggleShareComplianceStatus() {
           action_url,
           action_label,
           requirement_owner,
-          active,
-          profession_types
+          active
         )
       `
       )
-      .eq("auth_user_id", authUserId || "")
+      .eq("user_id", userId)
       .eq("location_state", state)
       .order("expires_date", { ascending: true, nullsFirst: true });
 
@@ -536,44 +345,16 @@ async function toggleShareComplianceStatus() {
 
     setItems((complianceItems as ComplianceItem[]) || []);
     setRecords((userRecords as UserComplianceRecord[]) || []);
-    const { data: logs } = await supabase
-  .from("compliance_log_types")
-  .select("*")
-  .eq("active", true)
-  .order("sort_order");
-
-setLogTypes(logs || []);
-
-if (authUserId) {
-  const { data: entries } = await supabase
-    .from("compliance_log_entries")
-    .select("*")
-    .eq("auth_user_id", authUserId)
-    .order("entry_date", {
-      ascending: false,
-    });
-
-  setLogEntries(entries || []);
-}
   }
 
-  
   async function autoPopulate() {
     setMessage("Loading required compliance...");
 
-    if (!authUserId) {
-  setMessage("Please log in to load compliance records.");
-  return;
-}
-
-const { error } = await supabase.rpc(
-  "auto_populate_user_compliance_public_bridge",
-  {
-    p_auth_user_id: authUserId,
-    p_state: state,
-    p_county: county,
-  }
-);
+    const { error } = await supabase.rpc("auto_populate_user_compliance", {
+      p_user_id: userId,
+      p_state: state,
+      p_county: county,
+    });
 
     if (error) {
       setMessage(error.message);
@@ -877,25 +658,6 @@ const { error } = await supabase.rpc(
     return owner === viewMode;
   }
 
-function recordMatchesProfession(
-  record: UserComplianceRecord
-) {
-  const professionTypes =
-    record.compliance_items?.profession_types;
-
-  if (
-    !professionTypes ||
-    professionTypes.length === 0
-  ) {
-    return true;
-  }
-
-  if (professionType === "shop") {
-    return true;
-  }
-
-  return professionTypes.includes(professionType);
-}
   function recordHasUsefulData(record: UserComplianceRecord) {
     return Boolean(
       record.completed_date ||
@@ -978,26 +740,15 @@ function recordMatchesProfession(
     setRecords([]);
     setItems([]);
 
-    window.localStorage.setItem(COMPLIANCE_STATE_KEY, newState);
-    window.localStorage.removeItem(COMPLIANCE_COUNTY_KEY);
-
     const counties = await loadCountiesForState(newState);
-    const nextCounty = counties[0] || "";
 
-    setCounty(nextCounty);
-
-    if (nextCounty) {
-      window.localStorage.setItem(COMPLIANCE_COUNTY_KEY, nextCounty);
-    }
-
+    setCounty(counties[0] || "");
     setLocationsReady(true);
   }
 
-   function handleCountyChange(newCounty: string) {
+  function handleCountyChange(newCounty: string) {
     setCounty(newCounty);
     setCompletionDates({});
-
-    window.localStorage.setItem(COMPLIANCE_COUNTY_KEY, newCounty);
   }
 
   async function completeRecord(record: UserComplianceRecord) {
@@ -1063,120 +814,6 @@ async function restoreExcludedItem(recordId: number) {
     )
   );
 }
-function getLogOwner(log: ComplianceLogType) {
-  return log.requirement_owner || "both";
-}
-
-function shouldShowLogType(log: ComplianceLogType) {
-  if (
-    log.key === "jewelry_sterilization" &&
-    professionType !== "piercer" &&
-    professionType !== "shop"
-  ) {
-    return false;
-  }
-
-  if (
-    log.key === "inspection_checklist" ||
-    log.key === "exposure_incident"
-  ) {
-    return true;
-  }
-
-  if (professionType === "shop") {
-    return true;
-  }
-
-  if (
-    professionType === "tattoo_artist" ||
-    professionType === "piercer"
-  ) {
-    return true;
-  }
-
-  return true;
-}
-
-function shouldCountTowardComplianceScore(record: UserComplianceRecord) {
-  const name = getDisplayRequirementName(record).toLowerCase();
-  const category = getDisplayRequirementCategory(record).toLowerCase();
-  const description = (record.compliance_items?.description || "").toLowerCase();
-
-  const combined = `${name} ${category} ${description}`;
-
-  const ongoingKeywords = [
-    "consent form",
-    "consent forms",
-    "minor consent",
-    "minor consent form",
-    "minor consent forms",
-    "client consent",
-    "client consent form",
-    "client consent forms",
-    "release form",
-    "release forms",
-    "aftercare",
-    "aftercare documentation",
-    "documentation system",
-    "recordkeeping",
-    "record keeping",
-    "written procedure",
-    "written procedures",
-    "policy",
-    "policies",
-    "procedure",
-    "procedures",
-    "system",
-    "systems",
-    "oral piercing client advisory",
-"oral piercing advisory",
-"piercing aftercare documentation",
-"piercing aftercare",
-"piercing jewelry material compliance",
-"jewelry material compliance",
-"client consent forms",
-"minor consent documentation",
-"aftercare documentation",
-"jewelry sterilization procedures",
-  ];
-
-  return !ongoingKeywords.some((keyword) => combined.includes(keyword));
-}
-function isComplianceLogRequirement(record: UserComplianceRecord) {
-  const name = getDisplayRequirementName(record).toLowerCase();
-  const category = getDisplayRequirementCategory(record).toLowerCase();
-  const description = (record.compliance_items?.description || "").toLowerCase();
-
-  const combined = `${name} ${category} ${description}`;
-
-if (
-  combined.includes("bloodborne pathogens") ||
-  combined.includes("bloodborne pathogen") ||
-  combined.includes("blood borne") ||
-  combined.includes("bbp")
-) {
-  return false;
-}
-
-  const logRequirementKeywords = [
-    "spore test",
-    "biological monitoring",
-    "autoclave",
-    "sterilization cycle",
-    "sterilization log",
-    "jewelry sterilization",
-    "sharps disposal",
-    "exposure incident",
-    "incident log",
-    "inspection readiness",
-    "inspection checklist",
-    "inspection readiness checklist",
-  ];
-
-  return logRequirementKeywords.some((keyword) =>
-    combined.includes(keyword)
-  );
-}
   function recordMatchesFilters(record: UserComplianceRecord) {
     const status = getStatus(record.expires_date);
     const displayName = getDisplayRequirementName(record);
@@ -1215,7 +852,6 @@ if (
 const activeRecords = dedupeRecords(records).filter(
   (record) =>
     shouldShowForViewMode(record) &&
-    recordMatchesProfession(record) &&
     !record.is_inapplicable
 );
 
@@ -1231,12 +867,6 @@ const filteredRecords = activeRecords.filter((record) =>
 
 const visibleRecords = filteredRecords;
 
-const visibleLogTypes = logTypes.filter((log) => shouldShowLogType(log));
-
-const visibleRequirementRecords = visibleRecords.filter(
-  (record) => !isComplianceLogRequirement(record)
-);
-
   const categoryOptions = useMemo(() => {
     const categories = Array.from(
       new Set(
@@ -1249,12 +879,12 @@ const visibleRequirementRecords = visibleRecords.filter(
     return categories;
   }, [visibleRecords]);
 
-  const artistRecords = visibleRequirementRecords.filter((r) => {
+  const artistRecords = filteredRecords.filter((r) => {
     const owner = getRequirementOwner(r);
     return owner === "artist" || owner === "both";
   });
 
-  const shopRecords = visibleRequirementRecords.filter((r) => {
+  const shopRecords = filteredRecords.filter((r) => {
     const owner = getRequirementOwner(r);
     return owner === "shop" || owner === "both";
   });
@@ -1288,9 +918,7 @@ const visibleRequirementRecords = visibleRecords.filter(
       });
   }
 
-const applicableRecords = visibleRequirementRecords.filter(
-  shouldCountTowardComplianceScore
-);
+const applicableRecords = visibleRecords;
 
 const completedCount = applicableRecords.filter(
   (r) => r.completed_date && r.expires_date
@@ -1300,70 +928,53 @@ const totalCount = applicableRecords.length;
   const progressPercent =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
 
-const activityFeed = useMemo(() => {
-  const requirementEvents = visibleRequirementRecords.flatMap((record) => {
-    const status = getStatus(record.expires_date);
-    const name = getDisplayRequirementName(record);
+  const activityFeed = useMemo(() => {
+    return visibleRecords
+      .flatMap((record) => {
+        const status = getStatus(record.expires_date);
+        const name = getDisplayRequirementName(record);
 
-    const events = [];
+        const events = [];
 
-    if (record.document_uploaded_at) {
-      events.push({
-        date: record.document_uploaded_at,
-        title: "Document uploaded",
-        detail: `${name} has a document in the vault.`,
-      });
-    }
+        if (record.document_uploaded_at) {
+          events.push({
+            date: record.document_uploaded_at,
+            title: "Document uploaded",
+            detail: `${name} has a document in the vault.`,
+          });
+        }
 
-    if (record.completed_date) {
-      events.push({
-        date: record.completed_date,
-        title: "Record completed",
-        detail: `${name} was marked complete.`,
-      });
-    }
+        if (record.completed_date) {
+          events.push({
+            date: record.completed_date,
+            title: "Record completed",
+            detail: `${name} was marked complete.`,
+          });
+        }
 
-    if (status === "Expired") {
-      events.push({
-        date: record.expires_date || new Date().toISOString(),
-        title: "Expired item needs attention",
-        detail: `${name} is expired.`,
-      });
-    }
+        if (status === "Expired") {
+          events.push({
+            date: record.expires_date || new Date().toISOString(),
+            title: "Expired item needs attention",
+            detail: `${name} is expired.`,
+          });
+        }
 
-    if (status === "Expiring Soon") {
-      events.push({
-        date: record.expires_date || new Date().toISOString(),
-        title: "Expiration coming up",
-        detail: `${name} expires soon.`,
-      });
-    }
+        if (status === "Expiring Soon") {
+          events.push({
+            date: record.expires_date || new Date().toISOString(),
+            title: "Expiration coming up",
+            detail: `${name} expires soon.`,
+          });
+        }
 
-    return events;
-  });
-
- const logEvents = logEntries
-  .filter((entry) =>
-    visibleLogTypes.some((log) => log.key === entry.log_type_key)
-  )
-  .map((entry) => {
-    const logType = visibleLogTypes.find(
-      (type) => type.key === entry.log_type_key
-    );
-
-    return {
-      date: entry.entry_date,
-      title: "Compliance log saved",
-      detail: `${logType?.name || "Compliance log"} was recorded.`,
-    };
-  });
-
-  return [...requirementEvents, ...logEvents]
-    .sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
-    .slice(0, 6);
-}, [visibleRecords, logEntries, visibleLogTypes]);
+        return events;
+      })
+      .sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
+      .slice(0, 6);
+  }, [visibleRecords]);
 
   function renderEmptyState(title: string, body: string) {
     return (
@@ -1476,13 +1087,13 @@ const activityFeed = useMemo(() => {
             </a>
           )}
         </div>
-      {isAllianceMember && (
+
         <div style={styles.recordDetailsGrid}>
           <div style={styles.detailCard}>
             <span>Completed</span>
             <strong>{record.completed_date || "Not entered"}</strong>
           </div>
-        
+
           <div style={styles.detailCard}>
             <span>Expires</span>
             <strong>{record.expires_date || "Not entered"}</strong>
@@ -1506,8 +1117,8 @@ const activityFeed = useMemo(() => {
             </button>
           </div>
         </div>
- )}
-                {editable && isAllianceMember && (
+
+        {editable && (
           <div style={styles.inlineActions}>
             <div style={styles.dateField}>
               <label style={styles.inputLabel}>Completed Date</label>
@@ -1547,80 +1158,81 @@ const activityFeed = useMemo(() => {
             </button>
           </div>
         )}
-        {isAllianceMember && (
-          <div style={styles.compactDocumentBox}>
-            <div>
-              <strong>Document</strong>
-              <p style={styles.documentMeta}>
-                {record.document_name
-                  ? `Current file: ${record.document_name}`
-                  : "No current document uploaded"}
-              </p>
-            </div>
 
-            <div style={styles.documentActions}>
-              {record.document_url && (
-                <button
-                  type="button"
-                  style={styles.secondaryButton}
-                  onClick={() => viewDocument(record)}
-                >
-                  View
-                </button>
-              )}
-
-              <label style={styles.uploadButton}>
-                {record.document_name ? "Replace" : "Upload"}
-
-                <input
-                  type="file"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-
-                    if (file) {
-                      uploadDocument(record, file);
-                    }
-
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={async () => {
-                  const { error } = await supabase
-                    .from("user_compliance_items")
-                    .update({
-                      is_inapplicable: !record.is_inapplicable,
-                    })
-                    .eq("id", record.id);
-
-                  if (error) {
-                    setMessage(error.message);
-                    return;
-                  }
-
-                  setMessage(
-                    !record.is_inapplicable
-                      ? "Item moved to Excluded / N/A Items."
-                      : "Item restored."
-                  );
-
-                  loadData();
-                }}
-              >
-                {record.is_inapplicable ? "Marked N/A" : "Mark N/A"}
-              </button>
-            </div>
+        <div style={styles.compactDocumentBox}>
+          <div>
+            <strong>Document</strong>
+            <p style={styles.documentMeta}>
+              {record.document_name
+                ? `Current file: ${record.document_name}`
+                : "No current document uploaded"}
+            </p>
           </div>
-        )}
+
+<div style={styles.documentActions}>
+  {record.document_url && (
+    <button
+      type="button"
+      style={styles.secondaryButton}
+      onClick={() => viewDocument(record)}
+    >
+      View
+    </button>
+  )}
+
+  <label style={styles.uploadButton}>
+    {record.document_name ? "Replace" : "Upload"}
+
+    <input
+      type="file"
+      style={{ display: "none" }}
+      onChange={(e) => {
+        const file = e.target.files?.[0];
+
+        if (file) {
+          uploadDocument(record, file);
+        }
+
+        e.currentTarget.value = "";
+      }}
+    />
+  </label>
+
+  <button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={async () => {
+    const { error } = await supabase
+      .from("user_compliance_items")
+      .update({
+        is_inapplicable: !record.is_inapplicable,
+      })
+      .eq("id", record.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+  !record.is_inapplicable
+    ? "Item moved to Excluded / N/A Items."
+    : "Item restored."
+);
+
+loadData();
+  }}
+>
+  {record.is_inapplicable
+    ? "Marked N/A"
+    : "Mark N/A"}
+</button>
+</div>
+        </div>
       </div>
     );
   }
-  
+
   const vaultRecords = visibleRecords.filter((record) => {
     const search = documentSearchTerm.trim().toLowerCase();
 
@@ -1874,1320 +1486,7 @@ loadData();
     </section>
   );
 }
-async function saveSporeTestLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
 
-  if (!sporeTestForm.entry_date) {
-    setMessage("Please enter the spore test date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "spore_test",
-      entry_date: sporeTestForm.entry_date,
-      result: sporeTestForm.result,
-      fields: {
-        lab_or_incubator: sporeTestForm.lab_or_incubator,
-        lot_number: sporeTestForm.lot_number,
-      },
-      notes: sporeTestForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message);
-    return;
-  }
-
-  setMessage("Spore test log saved.");
-  setActiveLogKey(null);
-  setSporeTestForm({
-    entry_date: "",
-    result: "pass",
-    lab_or_incubator: "",
-    lot_number: "",
-    notes: "",
-  });
-
-  loadData();
-}
-async function saveAutoclaveLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
-
-  if (!autoclaveForm.entry_date) {
-    setMessage("Please enter the service date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "autoclave_maintenance",
-      entry_date: autoclaveForm.entry_date,
-      fields: {
-        machine_id: autoclaveForm.machine_id,
-        service_performed: autoclaveForm.service_performed,
-        technician_vendor: autoclaveForm.technician_vendor,
-      },
-      notes: autoclaveForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message || "Could not save autoclave log.");
-    console.error("Error saving autoclave log:", error);
-    return;
-  }
-
-  setMessage("Autoclave maintenance log saved.");
-  setActiveLogKey(null);
-
-  setAutoclaveForm({
-    entry_date: "",
-    machine_id: "",
-    service_performed: "",
-    technician_vendor: "",
-    notes: "",
-  });
-
-  loadData();
-}
-async function saveSharpsDisposalLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
-
-  if (!sharpsForm.entry_date) {
-    setMessage("Please enter the pickup date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "sharps_disposal",
-      entry_date: sharpsForm.entry_date,
-      fields: {
-        vendor: sharpsForm.vendor,
-        manifest_number: sharpsForm.manifest_number,
-        container_count: sharpsForm.container_count,
-      },
-      notes: sharpsForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message || "Could not save sharps disposal log.");
-    console.error("Error saving sharps disposal log:", error);
-    return;
-  }
-
-  setMessage("Sharps disposal log saved.");
-  setActiveLogKey(null);
-
-  setSharpsForm({
-    entry_date: "",
-    vendor: "",
-    manifest_number: "",
-    container_count: "",
-    notes: "",
-  });
-
-  loadData();
-}
-async function saveExposureIncidentLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
-
-  if (!exposureForm.entry_date) {
-    setMessage("Please enter the incident date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "exposure_incident",
-      entry_date: exposureForm.entry_date,
-      fields: {
-        incident_type: exposureForm.incident_type,
-        individuals_involved: exposureForm.individuals_involved,
-        immediate_actions: exposureForm.immediate_actions,
-        medical_follow_up_required:
-          exposureForm.medical_follow_up_required,
-        outcome_resolution: exposureForm.outcome_resolution,
-      },
-      notes: exposureForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message || "Could not save exposure incident log.");
-    console.error("Error saving exposure incident log:", error);
-    return;
-  }
-
-  setMessage("Exposure incident log saved.");
-  setActiveLogKey(null);
-
-  setExposureForm({
-    entry_date: "",
-    incident_type: "",
-    individuals_involved: "",
-    immediate_actions: "",
-    medical_follow_up_required: "no",
-    outcome_resolution: "",
-    notes: "",
-  });
-
-  loadData();
-}
-async function saveSterilizationCycleLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
-
-  if (!sterilizationCycleForm.entry_date) {
-    setMessage("Please enter the cycle date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "sterilization_cycle",
-      entry_date: sterilizationCycleForm.entry_date,
-      result: sterilizationCycleForm.cycle_result,
-      fields: {
-        load_number: sterilizationCycleForm.load_number,
-        autoclave_used: sterilizationCycleForm.autoclave_used,
-        operator: sterilizationCycleForm.operator,
-      },
-      notes: sterilizationCycleForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message || "Could not save sterilization cycle log.");
-    console.error("Error saving sterilization cycle log:", error);
-    return;
-  }
-
-  setMessage("Sterilization cycle log saved.");
-  setActiveLogKey(null);
-
-  setSterilizationCycleForm({
-    entry_date: "",
-    load_number: "",
-    autoclave_used: "",
-    operator: "",
-    cycle_result: "pass",
-    notes: "",
-  });
-
-  loadData();
-}
-async function saveJewelrySterilizationLog() {
-  if (!authUserId) {
-    setMessage("You must be logged in to save a compliance log.");
-    return;
-  }
-
-  if (!jewelrySterilizationForm.entry_date) {
-    setMessage("Please enter the sterilization date.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from("compliance_log_entries")
-    .insert({
-      auth_user_id: authUserId,
-      log_type_key: "jewelry_sterilization",
-      entry_date: jewelrySterilizationForm.entry_date,
-      result: jewelrySterilizationForm.result,
-      fields: {
-        jewelry_batch: jewelrySterilizationForm.jewelry_batch,
-        material: jewelrySterilizationForm.material,
-        method: jewelrySterilizationForm.method,
-        operator: jewelrySterilizationForm.operator,
-      },
-      notes: jewelrySterilizationForm.notes,
-    });
-
-  if (error) {
-    setMessage(error.message || "Could not save jewelry sterilization log.");
-    console.error("Error saving jewelry sterilization log:", error);
-    return;
-  }
-
-  setMessage("Jewelry sterilization log saved.");
-  setActiveLogKey(null);
-
-  setJewelrySterilizationForm({
-    entry_date: "",
-    jewelry_batch: "",
-    material: "",
-    method: "",
-    operator: "",
-    result: "pass",
-    notes: "",
-  });
-
-  loadData();
-}
-function renderComplianceLogs() {
-  return (
-    <section style={styles.card}>
-      <div style={styles.sectionHeader}>
-        <div>
-          <p style={styles.eyebrow}>Alliance Compliance Operations</p>
-          <h2 style={styles.sectionTitle}>
-            Compliance Logs
-          </h2>
-
-          <p style={styles.helperText}>
-            Logs are operational records for sterilization, testing, inspections, and safety activity. They do not replace required compliance items, permits, licenses, inspections, or uploaded compliance documents.
-          </p>
-        </div>
-
-        <span style={styles.sectionCount}>
-          {visibleLogTypes.length}
-        </span>
-      </div>
-
-      {visibleLogTypes.length === 0 && (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>APA</div>
-
-          <div>
-            <strong>No logs available.</strong>
-
-            <p>
-              No compliance log templates have been
-              configured yet.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "grid",
-          gap: "16px",
-        }}
-      >
-        {visibleLogTypes.map((log) => {
-          const latestEntry = logEntries.find(
-            (entry) =>
-              entry.log_type_key === log.key
-          );
-
-          return (
-            <div
-              key={log.id}
-              style={{
-                border:
-                  "1px solid rgba(255,92,0,0.14)",
-                borderRadius: "16px",
-                padding: "18px",
-                background:
-                  "linear-gradient(180deg,#111,#0b0b0b)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <strong
-                    style={{
-                      fontSize: "16px",
-                    }}
-                  >
-                    {log.name}
-                  </strong>
-
-                  <p
-                    style={{
-                      color: "#9CA3AF",
-                      marginTop: "6px",
-                      fontSize: "13px",
-                    }}
-                  >
-                    {log.description}
-                  </p>
-
-                  <p
-                    style={{
-                      color: "#FC5B00",
-                      marginTop: "8px",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Frequency: {log.frequency}
-                  </p>
-                </div>
-
-             <button
-  type="button"
-  style={styles.button}
-  onClick={() => {
-if (
-  log.key === "spore_test" ||
-  log.key === "autoclave_maintenance" ||
-  log.key === "sharps_disposal" ||
-  log.key === "exposure_incident" ||
-  log.key === "sterilization_cycle" ||
-  log.key === "jewelry_sterilization"
-) {
-      setActiveLogKey(
-        activeLogKey === log.key ? null : log.key
-      );
-      return;
-    }
-
-    alert(`${log.name} form coming next`);
-  }}
->
-  {(log.key === "spore_test" ||
-  log.key === "autoclave_maintenance" ||
-  log.key === "sharps_disposal") &&
-activeLogKey === log.key
-  ? "Close Form"
-  : "Complete Log"}
-</button>
-              </div>
-
-              <div
-                style={{
-                  marginTop: "12px",
-                  color: "#bbb",
-                  fontSize: "13px",
-                }}
-              >
-                Last Entry:{" "}
-                {latestEntry
-                  ? latestEntry.entry_date
-                  : "No entries yet"}
-              </div>
-              {log.key === "spore_test" && activeLogKey === "spore_test" && (
-  <div style={styles.inlineActions}>
-    <div style={styles.dateField}>
-      <label style={styles.inputLabel}>Test Date</label>
-      <input
-        type="date"
-        style={styles.input}
-        value={sporeTestForm.entry_date}
-        onChange={(e) =>
-          setSporeTestForm((prev) => ({
-            ...prev,
-            entry_date: e.target.value,
-          }))
-        }
-      />
-    </div>
-
-    <div style={styles.dateField}>
-      <label style={styles.inputLabel}>Result</label>
-     <select
-  style={{
-    ...styles.input,
-    height: "50px",
-    minHeight: "50px",
-  }}
-  value={sporeTestForm.result}
-  onChange={(e) =>
-    setSporeTestForm((prev) => ({
-      ...prev,
-      result: e.target.value,
-    }))
-  }
->
-        <option value="pass">Pass</option>
-        <option value="fail">Fail</option>
-      </select>
-    </div>
-
-    <div style={styles.dateField}>
-      <label style={styles.inputLabel}>Lab / Incubator</label>
-      <input
-        style={styles.input}
-        value={sporeTestForm.lab_or_incubator}
-        onChange={(e) =>
-          setSporeTestForm((prev) => ({
-            ...prev,
-            lab_or_incubator: e.target.value,
-          }))
-        }
-      />
-    </div>
-
-    <div style={styles.dateField}>
-      <label style={styles.inputLabel}>Lot Number</label>
-      <input
-        style={styles.input}
-        value={sporeTestForm.lot_number}
-        onChange={(e) =>
-          setSporeTestForm((prev) => ({
-            ...prev,
-            lot_number: e.target.value,
-          }))
-        }
-      />
-    </div>
-
-    <div style={styles.dateField}>
-      <label style={styles.inputLabel}>Notes</label>
-      <input
-        style={styles.input}
-        value={sporeTestForm.notes}
-        onChange={(e) =>
-          setSporeTestForm((prev) => ({
-            ...prev,
-            notes: e.target.value,
-          }))
-        }
-      />
-    </div>
-
-    <button type="button" style={styles.button} onClick={saveSporeTestLog}>
-      Save Spore Test
-    </button>
-  </div>
-)}
-{log.key === "exposure_incident" &&
-  activeLogKey === "exposure_incident" && (
-    <div style={styles.inlineActions}>
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Incident Date</label>
-        <input
-          type="date"
-          style={styles.input}
-          value={exposureForm.entry_date}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              entry_date: e.target.value,
-            }))
-          }
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Incident Type</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={exposureForm.incident_type}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              incident_type: e.target.value,
-            }))
-          }
-          placeholder="Needlestick, blood exposure, splash, cut..."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Individuals Involved</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={exposureForm.individuals_involved}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              individuals_involved: e.target.value,
-            }))
-          }
-          placeholder="Staff initials or internal reference"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Immediate Actions Taken</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={exposureForm.immediate_actions}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              immediate_actions: e.target.value,
-            }))
-          }
-          placeholder="Washed area, reported incident, removed contaminated item..."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Medical Follow-Up Required</label>
-        <select
-          style={{
-            ...styles.input,
-            height: "50px",
-            minHeight: "50px",
-          }}
-          value={exposureForm.medical_follow_up_required}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              medical_follow_up_required: e.target.value,
-            }))
-          }
-        >
-          <option value="no">No</option>
-          <option value="yes">Yes</option>
-        </select>
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Outcome / Resolution</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={exposureForm.outcome_resolution}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              outcome_resolution: e.target.value,
-            }))
-          }
-          placeholder="Resolved, referred for follow-up, documented internally..."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Notes</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={exposureForm.notes}
-          onChange={(e) =>
-            setExposureForm((prev) => ({
-              ...prev,
-              notes: e.target.value,
-            }))
-          }
-          placeholder="Optional notes"
-        />
-      </div>
-
-      <button
-        type="button"
-        style={styles.button}
-        onClick={saveExposureIncidentLog}
-      >
-        Save Exposure Incident Log
-      </button>
-    </div>
-  )}
-  {log.key === "sterilization_cycle" &&
-  activeLogKey === "sterilization_cycle" && (
-    <div style={styles.inlineActions}>
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Cycle Date</label>
-        <input
-          type="date"
-          style={styles.input}
-          value={sterilizationCycleForm.entry_date}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              entry_date: e.target.value,
-            }))
-          }
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Load Number</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={sterilizationCycleForm.load_number}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              load_number: e.target.value,
-            }))
-          }
-          placeholder="Load, batch, or cycle number"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Autoclave Used</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={sterilizationCycleForm.autoclave_used}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              autoclave_used: e.target.value,
-            }))
-          }
-          placeholder="Autoclave name, number, or machine ID"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Operator</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={sterilizationCycleForm.operator}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              operator: e.target.value,
-            }))
-          }
-          placeholder="Operator name or initials"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Cycle Result</label>
-        <select
-          style={{
-            ...styles.input,
-            height: "50px",
-            minHeight: "50px",
-          }}
-          value={sterilizationCycleForm.cycle_result}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              cycle_result: e.target.value,
-            }))
-          }
-        >
-          <option value="pass">Pass</option>
-          <option value="fail">Fail</option>
-        </select>
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Notes</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={sterilizationCycleForm.notes}
-          onChange={(e) =>
-            setSterilizationCycleForm((prev) => ({
-              ...prev,
-              notes: e.target.value,
-            }))
-          }
-          placeholder="Optional notes"
-        />
-      </div>
-
-      <button
-        type="button"
-        style={styles.button}
-        onClick={saveSterilizationCycleLog}
-      >
-        Save Sterilization Cycle Log
-      </button>
-    </div>
-  )}
-  {log.key === "jewelry_sterilization" &&
-  activeLogKey === "jewelry_sterilization" && (
-    <div style={styles.inlineActions}>
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Sterilization Date</label>
-        <input
-          type="date"
-          style={styles.input}
-          value={jewelrySterilizationForm.entry_date}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              entry_date: e.target.value,
-            }))
-          }
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Jewelry Batch</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={jewelrySterilizationForm.jewelry_batch}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              jewelry_batch: e.target.value,
-            }))
-          }
-          placeholder="Batch, tray, pouch, or internal ID"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Material</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={jewelrySterilizationForm.material}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              material: e.target.value,
-            }))
-          }
-          placeholder="Titanium, steel, gold, glass..."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Method</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={jewelrySterilizationForm.method}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              method: e.target.value,
-            }))
-          }
-          placeholder="Steam autoclave, sterile pouch, etc."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Operator</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={jewelrySterilizationForm.operator}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              operator: e.target.value,
-            }))
-          }
-          placeholder="Operator name or initials"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Result</label>
-        <select
-          style={{
-            ...styles.input,
-            height: "50px",
-            minHeight: "50px",
-          }}
-          value={jewelrySterilizationForm.result}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              result: e.target.value,
-            }))
-          }
-        >
-          <option value="pass">Pass</option>
-          <option value="fail">Fail</option>
-        </select>
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Notes</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={jewelrySterilizationForm.notes}
-          onChange={(e) =>
-            setJewelrySterilizationForm((prev) => ({
-              ...prev,
-              notes: e.target.value,
-            }))
-          }
-          placeholder="Optional notes"
-        />
-      </div>
-
-      <button
-        type="button"
-        style={styles.button}
-        onClick={saveJewelrySterilizationLog}
-      >
-        Save Jewelry Sterilization Log
-      </button>
-    </div>
-  )}
-
-{log.key === "autoclave_maintenance" &&
-  activeLogKey === "autoclave_maintenance" && (
-    <div style={styles.inlineActions}>
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Service Date</label>
-        <input
-          type="date"
-          style={styles.input}
-          value={autoclaveForm.entry_date}
-          onChange={(e) =>
-            setAutoclaveForm((prev) => ({
-              ...prev,
-              entry_date: e.target.value,
-            }))
-          }
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Machine ID</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={autoclaveForm.machine_id}
-          onChange={(e) =>
-            setAutoclaveForm((prev) => ({
-              ...prev,
-              machine_id: e.target.value,
-            }))
-          }
-          placeholder="Autoclave name, number, or model"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Service Performed</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={autoclaveForm.service_performed}
-          onChange={(e) =>
-            setAutoclaveForm((prev) => ({
-              ...prev,
-              service_performed: e.target.value,
-            }))
-          }
-          placeholder="Cleaning, calibration, repair, inspection..."
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Technician / Vendor</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={autoclaveForm.technician_vendor}
-          onChange={(e) =>
-            setAutoclaveForm((prev) => ({
-              ...prev,
-              technician_vendor: e.target.value,
-            }))
-          }
-          placeholder="Technician, vendor, or internal staff"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Notes</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={autoclaveForm.notes}
-          onChange={(e) =>
-            setAutoclaveForm((prev) => ({
-              ...prev,
-              notes: e.target.value,
-            }))
-          }
-          placeholder="Optional notes"
-        />
-      </div>
-
-    <button
-  type="button"
-  style={styles.button}
-  onClick={saveAutoclaveLog}
->
-  Save Autoclave Log
-</button>
-    </div>
-  )}
-  {log.key === "sharps_disposal" &&
-  activeLogKey === "sharps_disposal" && (
-    <div style={styles.inlineActions}>
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Pickup Date</label>
-        <input
-          type="date"
-          style={styles.input}
-          value={sharpsForm.entry_date}
-          onChange={(e) =>
-            setSharpsForm((prev) => ({
-              ...prev,
-              entry_date: e.target.value,
-            }))
-          }
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Vendor</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={sharpsForm.vendor}
-          onChange={(e) =>
-            setSharpsForm((prev) => ({
-              ...prev,
-              vendor: e.target.value,
-            }))
-          }
-          placeholder="Sharps disposal vendor"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Manifest Number</label>
-        <input
-          type="text"
-          style={styles.input}
-          value={sharpsForm.manifest_number}
-          onChange={(e) =>
-            setSharpsForm((prev) => ({
-              ...prev,
-              manifest_number: e.target.value,
-            }))
-          }
-          placeholder="Manifest, pickup, or receipt number"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Container Count</label>
-        <input
-          type="number"
-          min="0"
-          style={styles.input}
-          value={sharpsForm.container_count}
-          onChange={(e) =>
-            setSharpsForm((prev) => ({
-              ...prev,
-              container_count: e.target.value,
-            }))
-          }
-          placeholder="Number of containers picked up"
-        />
-      </div>
-
-      <div style={styles.dateField}>
-        <label style={styles.inputLabel}>Notes</label>
-        <textarea
-          style={{
-            ...styles.input,
-            minHeight: "90px",
-            resize: "vertical",
-          }}
-          value={sharpsForm.notes}
-          onChange={(e) =>
-            setSharpsForm((prev) => ({
-              ...prev,
-              notes: e.target.value,
-            }))
-          }
-          placeholder="Optional notes"
-        />
-      </div>
-
-      <button
-        type="button"
-        style={styles.button}
-        onClick={saveSharpsDisposalLog}
-      >
-        Save Sharps Disposal Log
-      </button>
-    </div>
-  )}
-{openLogHistory === log.key && (
-  <div
-    style={{
-      marginTop: "18px",
-      borderTop: "1px solid rgba(255,255,255,0.08)",
-      paddingTop: "16px",
-    }}
-  >
-    {logEntries
-      .filter((entry) => entry.log_type_key === log.key)
-      .map((entry) => (
-        <div
-          key={entry.id}
-          style={{
-            padding: "12px",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: "12px",
-            marginBottom: "10px",
-            background: "#111",
-          }}
-        >
-          <strong>{entry.entry_date}</strong>
-
-          {log.key === "spore_test" && (
-            <>
-              <p style={styles.helperText}>
-                <strong>Result:</strong> {entry.result || "N/A"}
-              </p>
-
-              <p style={styles.helperText}>
-                <strong>Lab / Incubator:</strong>{" "}
-                {entry.fields?.lab_or_incubator || "-"}
-              </p>
-
-              <p style={styles.helperText}>
-                <strong>Lot Number:</strong>{" "}
-                {entry.fields?.lot_number || "-"}
-              </p>
-
-              {entry.notes && (
-                <p style={styles.helperText}>
-                  <strong>Notes:</strong> {entry.notes}
-                </p>
-              )}
-            </>
-          )}
-
-          {log.key === "autoclave_maintenance" && (
-            <>
-              <p style={styles.helperText}>
-                <strong>Service Date:</strong>{" "}
-                {entry.entry_date || "Not recorded"}
-              </p>
-
-              <p style={styles.helperText}>
-                <strong>Machine ID:</strong>{" "}
-                {entry.machine_id || "Not recorded"}
-              </p>
-
-              <p style={styles.helperText}>
-                <strong>Service Performed:</strong>{" "}
-                {entry.service_performed || "Not recorded"}
-              </p>
-
-              <p style={styles.helperText}>
-                <strong>Technician / Vendor:</strong>{" "}
-                {entry.technician_vendor || "Not recorded"}
-              </p>
-
-              {entry.notes && (
-                <p style={styles.helperText}>
-                  <strong>Notes:</strong> {entry.notes}
-                </p>
-              )}
-            </>
-          )}
-          {log.key === "sharps_disposal" && (
-  <>
-    <p style={styles.helperText}>
-      <strong>Pickup Date:</strong>{" "}
-      {entry.entry_date || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Vendor:</strong>{" "}
-      {entry.fields?.vendor || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Manifest Number:</strong>{" "}
-      {entry.fields?.manifest_number || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Container Count:</strong>{" "}
-      {entry.fields?.container_count || "Not recorded"}
-    </p>
-
-    {entry.notes && (
-      <p style={styles.helperText}>
-        <strong>Notes:</strong> {entry.notes}
-      </p>
-    )}
-  </>
-)}
-{log.key === "exposure_incident" && (
-  <>
-    <p style={styles.helperText}>
-      <strong>Incident Date:</strong>{" "}
-      {entry.entry_date || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Incident Type:</strong>{" "}
-      {entry.fields?.incident_type || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Individuals Involved:</strong>{" "}
-      {entry.fields?.individuals_involved || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Immediate Actions Taken:</strong>{" "}
-      {entry.fields?.immediate_actions || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Medical Follow-Up Required:</strong>{" "}
-      {entry.fields?.medical_follow_up_required || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Outcome / Resolution:</strong>{" "}
-      {entry.fields?.outcome_resolution || "Not recorded"}
-    </p>
-
-    {entry.notes && (
-      <p style={styles.helperText}>
-        <strong>Notes:</strong> {entry.notes}
-      </p>
-    )}
-  </>
-)}
-{log.key === "sterilization_cycle" && (
-  <>
-    <p style={styles.helperText}>
-      <strong>Cycle Date:</strong>{" "}
-      {entry.entry_date || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Load Number:</strong>{" "}
-      {entry.fields?.load_number || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Autoclave Used:</strong>{" "}
-      {entry.fields?.autoclave_used || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Operator:</strong>{" "}
-      {entry.fields?.operator || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Cycle Result:</strong>{" "}
-      {entry.result || "Not recorded"}
-    </p>
-
-    {entry.notes && (
-      <p style={styles.helperText}>
-        <strong>Notes:</strong> {entry.notes}
-      </p>
-    )}
-  </>
-)}
-{log.key === "jewelry_sterilization" && (
-  <>
-    <p style={styles.helperText}>
-      <strong>Sterilization Date:</strong>{" "}
-      {entry.entry_date || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Jewelry Batch:</strong>{" "}
-      {entry.fields?.jewelry_batch || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Material:</strong>{" "}
-      {entry.fields?.material || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Method:</strong>{" "}
-      {entry.fields?.method || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Operator:</strong>{" "}
-      {entry.fields?.operator || "Not recorded"}
-    </p>
-
-    <p style={styles.helperText}>
-      <strong>Result:</strong>{" "}
-      {entry.result || "Not recorded"}
-    </p>
-
-    {entry.notes && (
-      <p style={styles.helperText}>
-        <strong>Notes:</strong> {entry.notes}
-      </p>
-    )}
-  </>
-)}
-        </div>
-      ))}
-  </div>
-)}
-<div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-  <button
-    type="button"
-    style={styles.secondaryButton}
-    onClick={() =>
-      setOpenLogHistory(
-        openLogHistory === log.key ? null : log.key
-      )
-    }
-  >
-    {openLogHistory === log.key
-      ? "Hide History"
-      : "View History"}
-  </button>
-</div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
   function renderActivityFeed() {
     return (
       <section style={styles.card}>
@@ -3422,10 +1721,10 @@ activeLogKey === log.key
           <div>
             <strong>Viewing requirements as:</strong>
             <p style={styles.helperText}>
-  Artist view is for individual artists, including tattoo artists
-  and piercers. Shop view includes studio-level records like permits,
-  sharps disposal, sterilization logs, and facility compliance.
-</p>
+              Artist view is for individual tattooers. Shop view includes
+              studio-level records like permits, sharps disposal, and autoclave
+              logs.
+            </p>
           </div>
 
           <div style={styles.segmentedControl}>
@@ -3465,48 +1764,13 @@ activeLogKey === log.key
         </div>
 
         <div style={styles.shareBox}>
-        
-  <strong>Job Hub Privacy</strong>
-
-  <p style={styles.helperText}>
-    Share only your compliance status with shops/employers later.
-    Uploaded documents stay private unless you choose otherwise.
-  </p>
-
-<div
-  style={{
-    marginTop: "12px",
-    padding: "12px 14px",
-    borderRadius: "12px",
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  }}
->
-<p
-  style={{
-    marginTop: "6px",
-    color: "#7f7f7f",
-    fontSize: "12px",
-    lineHeight: "1.5",
-  }}
->
-  Enable before submitting an opportunity or open to work profile to display your public APA
-  compliance badge.
-</p>
-
-  <p
-    style={{
-      marginTop: "6px",
-      marginBottom: 0,
-      color: "#7f7f7f",
-      fontSize: "12px",
-      lineHeight: "1.5",
-    }}
-  >
-    Changing this setting later will not automatically update
-    listings already submitted.
-  </p>
-</div>
+          <div>
+            <strong>Job Hub Privacy</strong>
+            <p style={styles.helperText}>
+              Share only your compliance status with shops/employers later.
+              Uploaded documents stay private unless you choose otherwise.
+            </p>
+          </div>
 
           <button
             type="button"
@@ -3530,13 +1794,10 @@ activeLogKey === log.key
   !message.toLowerCase().includes("uploaded successfully") &&
   !message.toLowerCase().includes("document archived") &&
   !message.toLowerCase().includes("compliance item updated") &&
-  !message.toLowerCase().includes("required compliance items loaded") &&
-  !message.toLowerCase().includes("log saved") && (
+  !message.toLowerCase().includes("required compliance items loaded") && (
     <p style={styles.message}>{message}</p>
 )}
       </section>
-
-      {isAllianceMember && renderActivityFeed()}
 
       {filteredRecords.length === 0 && (
         <section style={styles.card}>
@@ -3547,98 +1808,36 @@ activeLogKey === log.key
         </section>
       )}
 
-      <div
-  style={{
-    marginBottom: "20px",
-    padding: "16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,138,61,0.35)",
-    background: "rgba(255,138,61,0.08)",
-  }}
->
-  <div
-    style={{
-      color: "#ff8a3d",
-      fontWeight: 700,
-      marginBottom: "8px",
-    }}
-  >
-    Ongoing Documentation Requirements
-  </div>
-
-  <div
-    style={{
-      color: "#d1d5db",
-      fontSize: "14px",
-      lineHeight: 1.6,
-    }}
-  >
-    Some compliance items represent ongoing recordkeeping obligations
-    such as consent forms, aftercare documentation, minor consent
-    records, and client advisories.
-    <br />
-    <br />
-    These items remain visible as compliance reminders but do not
-    affect your compliance score. Users are responsible for maintaining
-    current records and retaining documentation as required by
-    applicable laws and regulations.
-  </div>
-</div>
-
-      {viewMode === "both" ? (
-        <>
-        <div
-  style={{
-    marginBottom: "20px",
-    padding: "16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,138,61,0.35)",
-    background: "rgba(255,138,61,0.08)",
-  }}
->
-  <div
-    style={{
-      color: "#ff8a3d",
-      fontWeight: 700,
-      marginBottom: "8px",
-    }}
-  >
-    Ongoing Documentation Requirements
-  </div>
-
-  <div
-    style={{
-      color: "#d1d5db",
-      fontSize: "14px",
-      lineHeight: 1.6,
-    }}
-  >
-    Some compliance items represent ongoing recordkeeping obligations
-    such as consent forms, aftercare documentation, minor consent
-    records, and client advisories.
-    <br />
-    <br />
-    These items remain visible as compliance reminders but do not
-    affect your compliance score. Users are responsible for maintaining
-    current records and retaining documentation as required by
-    applicable laws and regulations.
-  </div>
-</div>
-          {renderRequirementSection("Requirements", artistRecords)}
-          {renderRequirementSection("Shop Requirements", shopRecords)}
-        </>
-      ) : viewMode === "shop" ? (
-        renderRequirementSection("Shop Requirements", shopRecords)
-      ) : (
-        renderRequirementSection("Requirements", artistRecords)
-      )}
- <AllianceGate
+      <AllianceGate
   allowed={isAllianceMember}
-  title="Alliance Compliance Operations"
-  description="Unlock document vault storage, expiration tracking, reminder emails, compliance history, uploads, and full compliance management tools for tattoo artists, piercers, and shops."
+  title="Alliance Compliance Tools"
+  description="Unlock document vault storage, expiration tracking, reminder emails, compliance history, uploads, and full compliance management tools for artists and shops."
 >
-  {renderComplianceLogs()}
+  {renderActivityFeed()}
 
+        {viewMode === "both" ? (
+          <>
+            {renderRequirementSection(
+              "Artist Requirements",
+              artistRecords
+            )}
+
+            {renderRequirementSection(
+              "Shop Requirements",
+              shopRecords
+            )}
+          </>
+        ) : viewMode === "shop" ? (
+          renderRequirementSection(
+            "Shop Requirements",
+            shopRecords
+          )
+        ) : (
+          renderRequirementSection(
+            "Artist Requirements",
+            artistRecords
+          )
+        )}
 {/* EXCLUDED / N/A ITEMS */}
 <div
   style={{

@@ -21,7 +21,7 @@ export default function RenewOpportunityPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("opportunities")
       .update({
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -29,13 +29,19 @@ export default function RenewOpportunityPage() {
         renewal_reminder_sent: false,
         status: "approved",
       })
-      .eq("renewal_token", token);
+      .eq("renewal_token", token)
+.select();
 
     setLoading(false);
 
+    if (!data || data.length === 0) {
+  setError("This renewal link is invalid, expired, or no longer active.");
+  return;
+}
+
     if (error) {
       console.error(error);
-      setError("This renewal link is invalid or could not be renewed.");
+      setError("This renewal link is invalid, expired, or no longer active.");
       return;
     }
 
@@ -45,12 +51,12 @@ export default function RenewOpportunityPage() {
   return (
     <main style={{ minHeight: "100vh", background: "#0f0f0f", color: "white", padding: "40px" }}>
       <div style={{ maxWidth: "650px", margin: "0 auto", background: "#1a1a1a", padding: "30px", borderRadius: "18px", border: "1px solid #333" }}>
-        <h1>Renew Opportunity Listing</h1>
+        <h1>Renew Listing</h1>
 
         {renewed ? (
           <>
             <p style={{ color: "#cfcfcf" }}>
-              Your listing has been renewed for another 30 days.
+              Your listing has been renewed for 30 more days.
             </p>
 
             <a href="/opportunities" style={{ color: "#d4af37", fontWeight: "bold" }}>
@@ -60,7 +66,7 @@ export default function RenewOpportunityPage() {
         ) : (
           <>
             <p style={{ color: "#cfcfcf" }}>
-              Click below to keep your opportunity active for another 30 days.
+              Click below to keep your Listing active for another 30 days.
             </p>
 
             {error && <p style={{ color: "#ff8080" }}>{error}</p>}
@@ -78,7 +84,7 @@ export default function RenewOpportunityPage() {
                 cursor: "pointer",
               }}
             >
-              {loading ? "Renewing..." : "Renew Listing"}
+              {loading ? "Renewing Listing..." : "Renew Listing"}
             </button>
           </>
         )}

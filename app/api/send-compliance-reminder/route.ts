@@ -45,7 +45,7 @@ export async function POST(request: Request) {
               <h1 style="margin:0; color:#ffffff; font-size:24px;">
                 Compliance Reminder
               </h1>
-              <p style="margin:8px 0 0; color:#d9c6a3; font-size:14px;">
+              <p style="margin:8px 0 0; color:#ffffff; font-size:14px;">
                 Artist Protection Alliance
               </p>
             </div>
@@ -80,8 +80,8 @@ export async function POST(request: Request) {
               ${
                 dashboardUrl
                   ? `
-                  <div style="margin:28px 0;">
-                    <a href="${dashboardUrl}" style="background:#c47a3c; color:#ffffff; text-decoration:none; padding:14px 20px; border-radius:999px; font-weight:bold; display:inline-block;">
+                  <div style="margin:28px 0; text-align:center;">
+                    <a href="${dashboardUrl}" style="background:#c47a3c; color:#ffffff; text-decoration:none; padding:14px 20px; border-radius:999px; font-weight:bold; display:inline-block; text-align:center;">
                       Open Compliance Dashboard
                     </a>
                   </div>
@@ -114,4 +114,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

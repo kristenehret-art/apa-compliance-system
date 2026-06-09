@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "../../lib/supabase";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import AllianceGate from "../../components/AllianceGate";
+
+const supabase = createClient();
 
 export default function CalculatorPage() {
   const stateNames: Record<string, string> = {
@@ -540,8 +544,9 @@ export default function CalculatorPage() {
     },
   };
 
-  const [shopName, setShopName] = useState("Artist Protection Alliance");
+  const [shopName, setShopName] = useState("");
   const [artistName, setArtistName] = useState("");
+  const [artistContact, setArtistContact] = useState("");
   const [shopEmail, setShopEmail] = useState("");
   const [sendShopCopy, setSendShopCopy] = useState(true);
 
@@ -551,6 +556,7 @@ export default function CalculatorPage() {
 
   const [state, setState] = useState("AZ");
   const [city, setCity] = useState("Statewide Average");
+  const [hasLoadedSavedLocation, setHasLoadedSavedLocation] = useState(false);
   const [hourlyRate, setHourlyRate] = useState(stateHourlyRates.AZ);
   const [hours, setHours] = useState(2);
   const [pricingMode, setPricingMode] = useState<"hourly" | "piece">("hourly");
@@ -570,11 +576,12 @@ export default function CalculatorPage() {
 
   const [applyDiscount, setApplyDiscount] = useState(false);
   const [discount, setDiscount] = useState(0);
-
   const [quoteLink, setQuoteLink] = useState("");
   const [isCreatingQuoteLink, setIsCreatingQuoteLink] = useState(false);
-
-  const minimumCharge = 150;
+  const [isAllianceMember, setIsAllianceMember] = useState(false);
+  const [professionType, setProfessionType] =
+  useState("tattoo_artist");
+  const minimumCharge = professionType === "piercer" ? 40 : 150;
 
   const cityOptions = Object.keys(cityRateMultipliers[state] || { "Statewide Average": 1 });
   const cityMultiplier = cityRateMultipliers[state]?.[city] || 1;
@@ -594,7 +601,11 @@ export default function CalculatorPage() {
   ? Math.round(finalTotal * (depositPercent / 100))
   : 0;
 
-  const profit = basePrice - materials - boothRent;
+  const profit =
+  taxableSubtotal -
+  taxAmount -
+  materials -
+  boothRent;
   const profitMargin = basePrice > 0 ? (profit / basePrice) * 100 : 0;
 
   const confidenceMessage =
@@ -602,29 +613,167 @@ export default function CalculatorPage() {
       ? "⚠️ Low margin — this quote may be underpriced."
       : profitMargin < 50
       ? "👍 Solid pricing — healthy professional quote."
-      : "🔥 Premium pricing — strong margin and positioning.";
+      : "🔥 Premium positioning — strong pricing structure.";
 
   const confidenceColor =
     profitMargin < 30 ? "#ff3b30" : profitMargin < 50 ? "#ff9500" : "#34c759";
 
   const marketPositionMessage =
+  professionType === "piercer"
+    ? "💎 Piercing pricing varies heavily by jewelry, placement, and service structure."
+    :
     hourlyRate < suggestedHourlyRate
       ? "⬆️ You are pricing below your selected market."
       : hourlyRate > suggestedHourlyRate
       ? "💎 You are positioned above market as a premium artist."
       : "✅ You are aligned with the selected market rate.";
 
-  useEffect(() => {
+      const professionLabel =
+  professionType === "piercer"
+    ? "Piercer"
+    : professionType === "shop"
+    ? "Shop"
+    : "Tattoo Artist";
+
+const serviceLabel =
+  professionType === "piercer"
+    ? "Piercing"
+    : "Tattoo";
+
+const descriptionLabel =
+  professionType === "piercer"
+    ? "Service Description"
+    : "Tattoo Description";
+
+const appointmentLabel =
+  professionType === "piercer"
+    ? "Appointment"
+    : "Tattoo Session";
+const presetLabels =
+  professionType === "piercer"
+    ? {
+        small: "Single Piercing",
+        medium: "Double Piercing",
+        large: "Advanced Session",
+        fullDay: "Full Appointment Block",
+      }
+    : {
+        small: "Small",
+        medium: "Medium",
+        large: "Large",
+        fullDay: "Full Day",
+      };
+      useEffect(() => {
+  const savedState = localStorage.getItem("apaCalculatorState");
+  const savedCity = localStorage.getItem("apaCalculatorCity");
+
+  if (savedState && stateHourlyRates[savedState]) {
+    setState(savedState);
+
+    if (savedCity && cityRateMultipliers[savedState]?.[savedCity]) {
+      setCity(savedCity);
+    }
+  }
+
+  setHasLoadedSavedLocation(true);
+}, []);
+useEffect(() => {
+  if (!hasLoadedSavedLocation) return;
+
+  localStorage.setItem("apaCalculatorState", state);
+
+  if (!cityRateMultipliers[state]?.[city]) {
     setCity("Statewide Average");
-    setHourlyRate(stateHourlyRates[state]);
-    setTaxRate(stateTaxRates[state]);
-  }, [state]);
+    localStorage.setItem("apaCalculatorCity", "Statewide Average");
+  }
+
+  setHourlyRate(stateHourlyRates[state]);
+  setTaxRate(stateTaxRates[state]);
+}, [state, hasLoadedSavedLocation]);
+useEffect(() => {
+  if (!hasLoadedSavedLocation) return;
+
+  localStorage.setItem("apaCalculatorCity", city);
+}, [city, hasLoadedSavedLocation]);
+
+useEffect(() => {
+  localStorage.setItem("apaCalculatorCity", city);
+}, [city]);
+
+  useEffect(() => {
+  async function loadMembership() {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+
+      const user = authData?.user;
+
+      if (!user) {
+        setIsAllianceMember(false);
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("membership_tier, profession_type")
+        .eq("id", user.id)
+        .single();
+
+      if (error || !profile) {
+        setIsAllianceMember(false);
+        return;
+      }
+
+      setIsAllianceMember(
+        profile.membership_tier === "alliance" ||
+        profile.membership_tier === "admin"
+      );
+
+      setProfessionType(
+         profile.profession_type || "tattoo_artist"
+      );
+    } catch (error) {
+      console.error("MEMBERSHIP LOAD ERROR:", error);
+      setIsAllianceMember(false);
+    }
+  }
+
+  loadMembership();
+}, []);
 
   useEffect(() => {
     setHourlyRate(suggestedHourlyRate);
   }, [city]);
 
   function applyPreset(type: "small" | "medium" | "large" | "fullDay") {
+    
+    if (professionType === "piercer") {
+  if (type === "small") {
+    setHours(0.25);
+    setMaterials(35);
+    setBoothRent(10);
+  }
+
+  if (type === "medium") {
+    setHours(0.5);
+    setMaterials(60);
+    setBoothRent(15);
+  }
+
+  if (type === "large") {
+    setHours(1);
+    setMaterials(100);
+    setBoothRent(25);
+  }
+
+  if (type === "fullDay") {
+    setHours(2);
+    setMaterials(180);
+    setBoothRent(40);
+  }
+
+  return;
+}
+    
     setPricingMode("hourly");
 
     if (type === "small") {
@@ -654,7 +803,9 @@ export default function CalculatorPage() {
 
   function validateQuote() {
     if (!clientName || !clientEmail || !tattooDescription) {
-      alert("Please enter client name, email, and tattoo description.");
+      alert(
+  `Please enter client name, email, and ${descriptionLabel.toLowerCase()}.`
+);
       return false;
     }
 
@@ -716,7 +867,7 @@ export default function CalculatorPage() {
       user_id: "demo-user",
       client_name: clientName,
       client_email: clientEmail,
-      tattoo_description: tattooDescription,
+      tattoo_description: `${serviceLabel} description`,
       estimated_hours: pricingMode === "hourly" ? hours : null,
       base_price: basePrice,
       material_cost: materials,
@@ -726,12 +877,12 @@ export default function CalculatorPage() {
     });
 
     if (error) {
-      alert("Quote did not save.");
+      alert(`${appointmentLabel} did not save.`);
       console.error(error);
       return;
     }
 
-    alert("Quote saved!");
+    alert(`${appointmentLabel} saved!`);
   }
 
 async function sendQuoteEmail() {
@@ -752,6 +903,7 @@ async function sendQuoteEmail() {
       body: JSON.stringify({
         shopName,
         artistName,
+        artistContact,
         shopEmail,
         clientName,
         clientEmail,
@@ -794,7 +946,10 @@ async function sendQuoteEmail() {
       return;
     }
 
-    const fullQuoteLink = `${window.location.origin}${linkData.quoteUrl}`;
+    const appBaseUrl =
+  process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+
+    const fullQuoteLink = `${appBaseUrl}${linkData.quoteUrl}`;
 
     setQuoteLink(fullQuoteLink);
 
@@ -836,7 +991,9 @@ async function sendQuoteEmail() {
       return;
     }
 
-    alert(`Quote sent to ${clientName}. Email includes accept + booking.`);
+    alert(
+  `${appointmentLabel} sent to ${clientName}. Email includes accept + booking.`
+);
   } catch (error: any) {
     console.error("SEND FAILED:", error);
     alert("Send failed: " + (error?.message || JSON.stringify(error)));
@@ -857,6 +1014,7 @@ async function createQuoteLink() {
   body: JSON.stringify({
     shopName,
     artistName,
+    artistContact,
     shopEmail,
     clientName,
     clientEmail,
@@ -895,7 +1053,9 @@ async function createQuoteLink() {
 
     if (!data.quoteUrl) {
       console.error("Missing quoteUrl from API response:", data);
-      alert("Quote was created, but the API did not return a quote link.");
+      alert(
+  `${appointmentLabel} was created, but the API did not return a shareable link.`
+);
       return;
     }
 
@@ -908,7 +1068,9 @@ async function createQuoteLink() {
       alert("Quote link copied! You can paste it into a text, email, or Instagram DM.");
     } catch (error) {
       console.error("Clipboard failed:", error);
-      alert("Quote link created, but your browser blocked auto-copy. Copy it from the link box.");
+      alert(
+  `${appointmentLabel} link created, but your browser blocked auto-copy. Copy it from the link box.`
+);
     }
   } catch (error: any) {
     console.error("FETCH FAILED WHILE CREATING QUOTE LINK:", error);
@@ -923,7 +1085,7 @@ async function createQuoteLink() {
 
     try {
       await navigator.clipboard.writeText(quoteLink);
-      alert("Quote link copied again.");
+      alert(`${appointmentLabel} link copied again.`);
     } catch {
       alert("Copy failed. Please copy the link manually.");
     }
@@ -981,6 +1143,31 @@ async function createQuoteLink() {
     fontWeight: "bold" as const,
   };
 
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      style={{
+        marginLeft: 6,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        background: "#ff5c00",
+        color: "#fff",
+        fontSize: 11,
+        fontWeight: "bold",
+        cursor: "help",
+        verticalAlign: "middle",
+      }}
+    >
+      ⓘ
+    </span>
+  );
+}
+
   return (
     <div style={{ background: "#0f0f0f", minHeight: "100vh", padding: 24, fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 950, margin: "0 auto" }}>
@@ -990,24 +1177,45 @@ async function createQuoteLink() {
             alt="Artist Protection Alliance"
             style={{ maxWidth: 420, width: "100%", height: "auto" }}
           />
-          <h1 style={{ color: "#ff5c00", marginTop: 20 }}>Premium Tattoo Pricing Engine</h1>
+          <h1 style={{ color: "#ff5c00", marginTop: 20 }}>Pricing & Client Quote Generator</h1>
           <p style={{ color: "#ddd" }}>
-            Tattooer-facing quote system. Customer quote stays clean.
+              Create accurate estimates, professional client quotes, and consistent pricing for artists, piercers, and studios.
           </p>
         </div>
 
         <div style={cardStyle}>
-          <h2>Shop Branding</h2>
+          <h2>Shop Info</h2>
 
-          <label>Shop / Brand Name</label>
+          <label>Shop Name </label>
           <input style={inputStyle} value={shopName} onChange={(e) => setShopName(e.target.value)} />
 
-          <label>Tattooer / Artist Name</label>
+          <label>
+  {professionType === "piercer"
+    ? "Piercer Name"
+    : professionType === "shop"
+    ? "Shop Rep Name"
+    : "Tattoo Artist Name"}
+</label>
           <input style={inputStyle} value={artistName} onChange={(e) => setArtistName(e.target.value)} />
 
-          <label>Shop Email</label>
-          <input style={inputStyle} type="email" value={shopEmail} onChange={(e) => setShopEmail(e.target.value)} />
-          <label>Booking Link (Calendly, Google Calendar, etc.)</label>
+<label>Shop Email</label>
+<input
+  style={inputStyle}
+  type="email"
+  value={shopEmail}
+  onChange={(e) => setShopEmail(e.target.value)}
+/>
+
+<label>Primary Contact Info</label>
+<input
+  style={inputStyle}
+  value={artistContact}
+  onChange={(e) => setArtistContact(e.target.value)}
+  placeholder="Instagram, phone number, email, or preferred contact"
+/>
+
+<label>Booking Link (Calendly, Google Calendar, etc.)</label>
+
 <input
   style={inputStyle}
   value={bookingLink}
@@ -1020,7 +1228,7 @@ async function createQuoteLink() {
   style={{ ...inputStyle, minHeight: 90 }}
   value={bookingInstructions}
   onChange={(e) => setBookingInstructions(e.target.value)}
-  placeholder="How should the client book? (Example: Click link, select date, send deposit via Venmo @artistname)"
+  placeholder="Provide booking instructions. (Example: booking steps, deposit instructions, or scheduling details)"
 />
 
          
@@ -1042,7 +1250,7 @@ async function createQuoteLink() {
       value={depositPercent}
       onChange={(e) => setDepositPercent(Number(e.target.value))}
     />
-<label>Deposit Due After Booking</label>
+<label>Deposit Due Before Booking</label>
 <select
   style={inputStyle}
   value={depositDueHours}
@@ -1073,7 +1281,7 @@ async function createQuoteLink() {
         </div>
 
         <div style={cardStyle}>
-          <h2>Client Quote Info</h2>
+          <h2>Client Details</h2>
 
           <label>Client Name</label>
           <input style={inputStyle} value={clientName} onChange={(e) => setClientName(e.target.value)} />
@@ -1081,7 +1289,7 @@ async function createQuoteLink() {
           <label>Client Email</label>
           <input style={inputStyle} type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} />
 
-          <label>Tattoo Description</label>
+          <label>{descriptionLabel}</label>
           <textarea
             style={{ ...inputStyle, minHeight: 100 }}
             value={tattooDescription}
@@ -1090,7 +1298,7 @@ async function createQuoteLink() {
         </div>
 
         <div style={cardStyle}>
-          <h2>Pricing Engine</h2>
+          <h2>Pricing Details</h2>
 
           <label>State</label>
           <select style={inputStyle} value={state} onChange={(e) => setState(e.target.value)}>
@@ -1127,19 +1335,42 @@ async function createQuoteLink() {
           </button>
 
           <div style={{ marginBottom: 20 }}>
-            <p><strong>Quick Quote Presets</strong></p>
+            <p><strong>Quick Pricing Presets</strong></p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              <button onClick={() => applyPreset("small")} style={smallButtonStyle}>Small</button>
-              <button onClick={() => applyPreset("medium")} style={smallButtonStyle}>Medium</button>
-              <button onClick={() => applyPreset("large")} style={smallButtonStyle}>Large</button>
-              <button onClick={() => applyPreset("fullDay")} style={smallButtonStyle}>Full Day</button>
-            </div>
-          </div>
+              <button
+  onClick={() => applyPreset("small")}
+  style={smallButtonStyle}
+>
+  {presetLabels.small}
+</button>
 
-          <label>Pricing Mode</label>
+<button
+  onClick={() => applyPreset("medium")}
+  style={smallButtonStyle}
+>
+  {presetLabels.medium}
+</button>
+
+<button
+  onClick={() => applyPreset("large")}
+  style={smallButtonStyle}
+>
+  {presetLabels.large}
+</button>
+
+<button
+  onClick={() => applyPreset("fullDay")}
+  style={smallButtonStyle}
+>
+  {presetLabels.fullDay}
+</button>
+</div>
+</div>
+
+<label>Pricing Mode</label>
           <select style={inputStyle} value={pricingMode} onChange={(e) => setPricingMode(e.target.value as "hourly" | "piece")}>
             <option value="hourly">Hourly</option>
-            <option value="piece">Piece Work / Flat Rate</option>
+            <option value="piece">Flat Rate</option>
           </select>
 
           {pricingMode === "hourly" && (
@@ -1174,7 +1405,7 @@ async function createQuoteLink() {
           )}
 
           <label style={{ display: "block", marginTop: 12 }}>
-            <input type="checkbox" checked={applyDiscount} onChange={(e) => setApplyDiscount(e.target.checked)} /> Add Large Piece Discount
+            <input type="checkbox" checked={applyDiscount} onChange={(e) => setApplyDiscount(e.target.checked)} /> Apply Discount
           </label>
 
           {applyDiscount && (
@@ -1184,128 +1415,427 @@ async function createQuoteLink() {
             </>
           )}
 
-          <button onClick={saveSettings} style={darkButtonStyle}>
-            Save Shop Settings
-          </button>
+          <AllianceGate
+  allowed={isAllianceMember}
+  title="Alliance Member Feature"
+>
+  <button onClick={saveSettings} style={darkButtonStyle}>
+    Save Shop Settings
+  </button>
+</AllianceGate>
         </div>
 
-        <div style={{ background: "#1a1a1a", color: "#f5f5f5", padding: 28, borderRadius: 20, boxShadow: "0 10px 25px rgba(0,0,0,0.25)" }}>
-          <h2 style={{ color: "#ff5c00" }}>Profit Breakdown</h2>
+<div
+  style={{
+    background: "linear-gradient(180deg,#1c1c1c,#121212)",
+    color: "#f5f5f5",
+    padding: 30,
+    borderRadius: 24,
+    boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  }}
+>
+  <h2 style={{ color: "#ff5c00", marginTop: 0 }}>Pricing Breakdown</h2>
 
-          <p><strong>State:</strong> {stateNames[state]}</p>
-          <p><strong>City / Market:</strong> {city}</p>
-          <p><strong>City Rate Multiplier:</strong> {cityMultiplier.toFixed(2)}x</p>
-          <p><strong>Suggested Hourly Rate:</strong> ${suggestedHourlyRate}/hr</p>
-          <p><strong>Actual Hourly Rate Used:</strong> ${hourlyRate}/hr</p>
-          <p><strong>Pricing Type:</strong> {pricingMode === "hourly" ? "Hourly" : "Piece Work"}</p>
-          {pricingMode === "hourly" && <p><strong>Hours:</strong> {hours}</p>}
-          <p><strong>Base Artist Price:</strong> ${basePrice.toFixed(2)}</p>
-          <p><strong>Materials:</strong> ${materials.toFixed(2)}</p>
-          <p><strong>Shop / Booth Rent Allocation:</strong> ${boothRent.toFixed(2)}</p>
-          <p><strong>Discount:</strong> -${discountAmount.toFixed(2)}</p>
-          <p><strong>Tax:</strong> ${taxAmount.toFixed(2)}</p>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+      gap: 14,
+      marginBottom: 22,
+    }}
+  >
+    <div style={{ background: "#151515", padding: 16, borderRadius: 16 }}>
+      <p><strong>State:</strong> {stateNames[state]}</p>
+      <p><strong>City / Market:</strong> {city}</p>
+      <p>
+  <strong>Market Adjustment Multiplier:</strong>
+  <InfoTip text="This adjusts the state average rate for the selected local market. A 1.15x multiplier means the selected market is estimated at 15% above the state average." />
+  {" "}
+  {cityMultiplier.toFixed(2)}x
+</p>
+   <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
+ 
+</p>   <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5 }}>
+        
+      </p>
+    </div>
 
-          <hr style={{ borderColor: "#333" }} />
+    <div style={{ background: "#151515", padding: 16, borderRadius: 16 }}>
+      <p>
+  <strong>Suggested Hourly Rate:</strong>
+  <InfoTip text="Calculated using state average pricing and local market adjustments. You can override this recommendation at any time." />
+  {" "}
+  ${suggestedHourlyRate}/hr
+</p>
+     <p>
+  <strong>Selected Hourly Rate Used:</strong>
+  <InfoTip text="This is the hourly rate currently being used to calculate the estimate." />
+  {" "}
+  ${hourlyRate}/hr
+</p>
+      <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5 }}>
+        
+      </p>
+    </div>
+  </div>
 
-          <p><strong>Estimated Profit:</strong> ${profit.toFixed(2)}</p>
-          <p><strong>Profit Margin:</strong> {profitMargin.toFixed(0)}%</p>
-          <p style={{ color: confidenceColor, fontWeight: "bold" }}>{confidenceMessage}</p>
+  <div
+    style={{
+      background: "#101010",
+      padding: 20,
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.08)",
+    }}
+  >
+    <p><strong>Pricing Type:</strong> {pricingMode === "hourly" ? "Hourly" : "Flat Rate"}</p>
+    {pricingMode === "hourly" && <p><strong>Hours:</strong> {hours}</p>}
 
-          <h2>Total Estimate Before Clean Rounding: ${total.toFixed(2)}</h2>
-          <h2 style={{ color: "#ff5c00" }}>Clean Client Estimate: ${finalTotal.toFixed(0)}</h2>
+    <p>
+      <strong>
+        {professionType === "piercer"
+          ? "Base Piercing Price"
+          : "Base Artist Price"}
+        :
+      </strong>{" "}
+      ${basePrice.toFixed(2)}
+    </p>
 
-          {finalTotal === minimumCharge && total < minimumCharge && (
-            <p style={{ color: "#ff5c00" }}>
-              Minimum charge applied (${minimumCharge})
-            </p>
-          )}
+    <p><strong>Materials / Supplies:</strong> ${materials.toFixed(2)}</p>
 
-          <hr style={{ borderColor: "#333" }} />
+    <p>
+  <strong>Estimated Overhead Allocation:</strong>
+  <InfoTip text="Represents a portion of rent, utilities, software, insurance, admin costs, supplies, and other business expenses allocated to this service." />
+  {" "}
+  ${boothRent.toFixed(2)}
+</p>
+    <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
+      
+    </p>
 
-          <h3 style={{ color: "#ff5c00" }}>Client Quote Preview</h3>
-          <p><strong>Shop:</strong> {shopName || "Shop name"}</p>
-          {artistName && <p><strong>Artist:</strong> {artistName}</p>}
-          <p><strong>Description:</strong> {tattooDescription || "Tattoo description"}</p>
-          {pricingMode === "hourly" && <p><strong>Estimated Hours:</strong> {hours}</p>}
-          <p><strong>Total Estimate:</strong> ${finalTotal.toFixed(0)}</p>
+    <p><strong>Applied Discount:</strong> -${discountAmount.toFixed(2)}</p>
+    <p><strong>Tax:</strong> ${taxAmount.toFixed(2)}</p>
+  </div>
 
-          <button onClick={saveQuote} style={darkButtonStyle}>
-            Save Quote
-          </button>
+  <hr style={{ borderColor: "#333", margin: "24px 0" }} />
 
-          <button onClick={sendQuoteEmail} style={{ ...primaryButtonStyle, marginLeft: 10 }}>
-            Send Customer Quote
-          </button>
+  {professionType !== "piercer" && (
+    <div
+      style={{
+        background: "#151515",
+        padding: 20,
+        borderRadius: 18,
+        border: "1px solid rgba(255,92,0,0.25)",
+        marginBottom: 22,
+      }}
+    >
+      <p>
+        <strong>Estimated Earnings After Expenses:</strong>
+<InfoTip text="Calculated after discounts, taxes, materials, and estimated overhead costs. This estimate does not include income taxes, financing costs, payment processing fees, or shop percentage splits unless included in your overhead allocation." />{" "}
+        ${profit.toFixed(2)}
+      </p>
 
-          <button
-            onClick={createQuoteLink}
-            disabled={isCreatingQuoteLink}
-            style={{
-              ...darkButtonStyle,
-              marginLeft: 10,
-              opacity: isCreatingQuoteLink ? 0.65 : 1,
-            }}
-          >
-            {isCreatingQuoteLink ? "Creating Link..." : "Create Quote Link"}
-          </button>
+      <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
+        
+      </p>
 
-          {quoteLink && (
-            <div style={{
-              marginTop: 22,
-              padding: 18,
-              borderRadius: 14,
-              background: "#111",
-              border: "1px solid #333",
-            }}>
-              <p style={{ marginTop: 0, color: "#ff5c00", fontWeight: "bold" }}>
-                Shareable Customer Quote Link
-              </p>
+      <p>
+        <strong>Estimated Margin:</strong>
+<InfoTip text="The percentage of revenue remaining after estimated business expenses." />{" "}
+        {profitMargin.toFixed(0)}%
+      </p>
 
-              <input
-                style={{
-                  width: "100%",
-                  padding: 12,
-                  borderRadius: 8,
-                  border: "1px solid #444",
-                  background: "#fff",
-                  color: "#111",
-                  boxSizing: "border-box",
-                  marginBottom: 10,
-                }}
-                value={quoteLink}
-                readOnly
-              />
+      <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
+        
+      </p>
 
-              <button onClick={copyExistingQuoteLink} style={primaryButtonStyle}>
-                Copy Link
-              </button>
+      <p
+        style={{
+          color: confidenceColor,
+          fontWeight: "bold",
+          marginBottom: 0,
+        }}
+      >
+        {confidenceMessage}
+      </p>
+    </div>
+  )}
 
-              <a
-                href={quoteLink}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: "inline-block",
-                  marginLeft: 10,
-                  marginTop: 10,
-                  padding: "14px 18px",
-                  background: "#f2f2f2",
-                  color: "#111",
-                  borderRadius: 10,
-                  textDecoration: "none",
-                  fontWeight: "bold",
-                }}
-              >
-                View Customer Quote
-              </a>
-            </div>
-          )}
+  <div
+    style={{
+      background: "#0f0f0f",
+      padding: 22,
+      borderRadius: 20,
+      border: "1px solid rgba(255,255,255,0.08)",
+      textAlign: "center",
+      marginBottom: 24,
+    }}
+  >
+    <p style={{ color: "#aaa", marginBottom: 6 }}>
+      {professionType === "piercer"
+        ? "Service Estimate Before Clean Rounding"
+        : "Total Estimate Before Clean Rounding"}
+    </p>
 
-          <p style={{ fontSize: 12, color: "#888", marginTop: 24 }}>
-            Powered by Artist Protection Alliance
-          </p>
-        </div>
+    <h2 style={{ marginTop: 0 }}>${total.toFixed(2)}</h2>
+
+    <p style={{ color: "#aaa", marginBottom: 6 }}>
+      {professionType === "piercer"
+        ? "Estimated Piercing Total"
+        : "Clean Client Estimate"}
+    </p>
+
+    <h1 style={{ color: "#ff5c00", marginTop: 0 }}>
+      ${finalTotal.toFixed(0)}
+    </h1>
+
+    {finalTotal === minimumCharge && total < minimumCharge && (
+      <p style={{ color: "#ff5c00" }}>
+        Minimum service fee applied (${minimumCharge})
+      </p>
+    )}
+  </div>
+
+  <details
+    style={{
+      background: "#151515",
+      borderRadius: 18,
+      padding: 18,
+      border: "1px solid rgba(255,255,255,0.08)",
+      marginBottom: 24,
+    }}
+  >
+    <summary
+      style={{
+        cursor: "pointer",
+        color: "#ff5c00",
+        fontWeight: "bold",
+        fontSize: 16,
+      }}
+    >
+      How are these calculations made?
+    </summary>
+
+    <div style={{ color: "#ccc", fontSize: 14, lineHeight: 1.7, marginTop: 16 }}>
+      <p>
+        <strong>Suggested hourly rate:</strong> State average hourly rate multiplied by the selected city or market adjustment.
+      </p>
+
+      <p>
+        <strong>Base artist price:</strong>{" "}
+        {pricingMode === "hourly"
+          ? "Selected hourly rate multiplied by estimated hours."
+          : "The flat rate entered for the service."}
+      </p>
+
+      <p>
+        <strong>Subtotal:</strong> Base price plus materials and estimated overhead allocation.
+      </p>
+
+      <p>
+        <strong>Discount:</strong> Applied before tax when the discount option is turned on.
+      </p>
+
+      <p>
+        <strong>Tax:</strong> Calculated only when “Apply State Tax” is turned on.
+      </p>
+
+      <p>
+  <strong>Estimated earnings after expenses:</strong>
+  Calculated from the client subtotal after discounts, then reduced by tax,
+  materials, and estimated overhead allocation. This provides a closer estimate
+  of actual take-home revenue from the service.
+</p>
+
+      <p>
+        <strong>Clean client estimate:</strong> The final client-facing estimate is rounded to a clean number for easier quoting.
+      </p>
+    </div>
+  </details>
+
+  <hr style={{ borderColor: "#333" }} />
+
+  <h3 style={{ color: "#ff5c00" }}>
+    Client {appointmentLabel} Preview
+  </h3>
+
+  <p><strong>Shop:</strong> {shopName || "Shop name"}</p>
+
+  {artistContact && (
+    <p><strong>Artist Contact:</strong> {artistContact}</p>
+  )}
+
+  {artistName && (
+    <p>
+      <strong>
+        {professionType === "piercer"
+          ? "Piercer"
+          : professionType === "shop"
+          ? "Representative"
+          : "Artist"}
+        :
+      </strong>{" "}
+      {artistName}
+    </p>
+  )}
+
+  <p>
+    <strong>{descriptionLabel}:</strong>{" "}
+    {tattooDescription || `${serviceLabel} description`}
+  </p>
+
+  {pricingMode === "hourly" && (
+    <p>
+      <strong>Estimated {appointmentLabel} Hours:</strong> {hours}
+    </p>
+  )}
+
+  <p>
+    <strong>Estimated Total:</strong>{" "}
+    ${finalTotal.toFixed(0)}
+  </p>
+<AllianceGate
+  allowed={isAllianceMember}
+  title="Professional Quote Tools"
+  description={`Create professional client quotes, save estimates, and streamline bookings with Alliance membership.`}
+>
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+      gap: 14,
+      marginTop: 8,
+    }}
+  >
+    <button
+      onClick={createQuoteLink}
+      disabled={isCreatingQuoteLink}
+      style={{
+        ...darkButtonStyle,
+        opacity: isCreatingQuoteLink ? 0.7 : 1,
+        padding: "18px",
+        borderRadius: 16,
+        background: "#161616",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      {isCreatingQuoteLink
+        ? "Creating Quote..."
+       : "Create Shareable Quote"}
+    </button>
+
+    <button
+      onClick={saveQuote}
+      style={{
+        ...darkButtonStyle,
+        padding: "18px",
+        borderRadius: 16,
+        background: "#161616",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      Save Draft
+    </button>
+
+    <button
+      onClick={sendQuoteEmail}
+      style={{
+        ...primaryButtonStyle,
+        padding: "18px",
+        borderRadius: 16,
+      }}
+    >
+      Send Client Quote
+    </button>
+  </div>
+
+  {quoteLink && (
+    <div
+      style={{
+        marginTop: 22,
+        padding: 22,
+        borderRadius: 18,
+        background: "#111111",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      <p
+        style={{
+          marginTop: 0,
+          marginBottom: 12,
+          color: "#ff5c00",
+          fontWeight: "bold",
+          fontSize: 15,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        Shareable Client Quote
+      </p>
+
+      <input
+        style={{
+          width: "100%",
+          padding: 14,
+          borderRadius: 12,
+          border: "1px solid #333",
+          background: "#fff",
+          color: "#111",
+          boxSizing: "border-box",
+          fontSize: 14,
+        }}
+        value={quoteLink}
+        readOnly
+      />
+
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          marginTop: 16,
+        }}
+      >
+        <button
+          onClick={copyExistingQuoteLink}
+          style={{
+            ...primaryButtonStyle,
+            padding: "12px 16px",
+          }}
+        >
+          Copy Link
+        </button>
+
+        <a
+          href={quoteLink}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "12px 16px",
+            background: "#1f1f1f",
+            color: "#fff",
+            borderRadius: 12,
+            textDecoration: "none",
+            border: "1px solid rgba(255,255,255,0.08)",
+            fontWeight: "bold",
+          }}
+        >
+          Open Client Quote
+        </a>
       </div>
     </div>
+  )}
+</AllianceGate>
+
+</div>
+
+            <p style={{ fontSize: 12, color: "#888", marginTop: 12 }}>
+              Powered by Artist Protection Alliance
+            </p>
+          </div>
+        </div>
   );
 }

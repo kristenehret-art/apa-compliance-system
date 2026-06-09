@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import sgMail from "@sendgrid/mail";
 import { supabase } from "../../../lib/supabase";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+sgMail.setApiKey(process.env.SENDGRID_COMPLIANCE_API_KEY!);
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +27,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!shopEmail) {
+      return NextResponse.json(
+        { error: "This opportunity does not have a contact email." },
+        { status: 400 }
+      );
+    }
+
     const { error: insertError } = await supabase
       .from("opportunity_applications")
       .insert({
@@ -41,41 +48,48 @@ export async function POST(request: Request) {
       });
 
     if (insertError) {
-      return NextResponse.json(
-        { error: insertError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
-    if (shopEmail) {
-      await resend.emails.send({
-        from: "Artist Protection Alliance <onboarding@resend.dev>",
-        to: shopEmail,
-        subject: `New applicant for ${opportunityTitle}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; background:#f7f7f7; padding:30px;">
-            <div style="max-width:650px; margin:0 auto; background:white; padding:30px; border-radius:14px;">
-              <h1>New Applicant</h1>
-              <p><strong>Opportunity:</strong> ${opportunityTitle}</p>
-              <hr />
-              <p><strong>Name:</strong> ${applicantName}</p>
-              <p><strong>Email:</strong> ${applicantEmail}</p>
-              <p><strong>Phone:</strong> ${applicantPhone || "Not provided"}</p>
-              <p><strong>Instagram:</strong> ${applicantInstagram || "Not provided"}</p>
-              <p><strong>Portfolio:</strong> ${applicantPortfolio || "Not provided"}</p>
-              <p><strong>Message:</strong></p>
-              <p>${message}</p>
-            </div>
+    await sgMail.send({
+      to: shopEmail,
+      from: "Artist Protection Alliance <compliance@artistprotectionalliance.com>",
+      replyTo: applicantEmail,
+      subject: `New applicant for ${opportunityTitle || "your opportunity"}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; background:#0f0f0f; padding:30px;">
+          <div style="max-width:650px; margin:0 auto; background:#ffffff; color:#111; padding:30px; border-radius:16px;">
+            <h1 style="color:#ff5c00; margin-top:0;">New Applicant</h1>
+
+            <p><strong>Opportunity:</strong> ${opportunityTitle || "Opportunity"}</p>
+
+            <hr style="border:none; border-top:1px solid #e5e5e5; margin:24px 0;" />
+
+            <p><strong>Name:</strong> ${applicantName}</p>
+            <p><strong>Email:</strong> ${applicantEmail}</p>
+            <p><strong>Phone:</strong> ${applicantPhone || "Not provided"}</p>
+            <p><strong>Instagram:</strong> ${applicantInstagram || "Not provided"}</p>
+            <p><strong>Portfolio:</strong> ${applicantPortfolio || "Not provided"}</p>
+
+            <p><strong>Message:</strong></p>
+            <p style="line-height:1.6;">${message}</p>
+
+            <hr style="border:none; border-top:1px solid #e5e5e5; margin:24px 0;" />
+
+            <p style="font-size:13px; color:#666;">
+              This application was submitted through Artist Protection Alliance.
+              You can reply directly to this email to contact the applicant.
+            </p>
           </div>
-        `,
-      });
-    }
+        </div>
+      `,
+    });
 
     return NextResponse.json({ message: "Application submitted." });
-  } catch (error) {
-    console.error(error);
+  } catch (error: any) {
+    console.error("APPLICATION ROUTE ERROR:", error);
     return NextResponse.json(
-      { error: "Application route failed." },
+      { error: error?.message || "Application route failed." },
       { status: 500 }
     );
   }

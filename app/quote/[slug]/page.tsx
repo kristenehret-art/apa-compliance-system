@@ -234,7 +234,7 @@ export default function CustomerQuotePage() {
     return (
       <div style={pageStyle}>
         <div style={cardStyle}>
-          <h1>Loading quote...</h1>
+          <h1>Loading client quote...</h1>
         </div>
       </div>
     );
@@ -301,7 +301,7 @@ export default function CustomerQuotePage() {
         {copied && <p style={copiedTextStyle}>Quote link copied.</p>}
 
         <div id="quote-details" style={{ paddingTop: 20 }}>
-          <h1 style={{ color: "#ff5c00" }}>Tattoo Estimate</h1>
+          <h1 style={{ color: "#ff5c00" }}>Client Quote</h1>
 
           <p style={{ marginTop: -6 }}>
             Prepared by <strong>{quote.artist_name || quote.shop_name}</strong>
@@ -317,7 +317,7 @@ export default function CustomerQuotePage() {
             </p>
 
             <p>
-              <strong>Tattoo Description:</strong>
+              <strong>Service Description:</strong>
               <br />
               {quote.tattoo_description}
             </p>
@@ -405,14 +405,14 @@ export default function CustomerQuotePage() {
           id="timeline-section"
           style={{ ...timelineBoxStyle, paddingTop: 20 }}
         >
-          <h3 style={{ color: "#ff5c00", marginTop: 0 }}>Quote Timeline</h3>
+          <h3 style={{ color: "#ff5c00", marginTop: 0 }}>Appointment Timeline</h3>
 
           <div style={timelineItemStyle}>
             <div style={timelineDotDoneStyle}></div>
             <div>
               <strong>Quote Created</strong>
               <p style={timelineTextStyle}>
-                Estimate has been sent to the client.
+                Client quote has been delivered.
               </p>
             </div>
           </div>

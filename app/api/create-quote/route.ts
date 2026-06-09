@@ -25,6 +25,7 @@ export async function POST(request: Request) {
 
         shop_name: body.shopName || "",
         artist_name: body.artistName || "",
+        artist_contact: body.artistContact || "",
         shop_email: body.shopEmail || "",
 
         client_name: body.clientName || "",

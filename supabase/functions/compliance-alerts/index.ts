@@ -18,7 +18,6 @@ type RecordType = {
   location_county: string | null;
   reminder_enabled: boolean;
   reminder_90_sent_at: string | null;
-  reminder_60_sent_at: string | null;
   reminder_30_sent_at: string | null;
   reminder_60_sent_at: string | null;
   reminder_7_sent_at: string | null;
@@ -220,71 +219,72 @@ Deno.serve(async () => {
           ? "expires in 1 week or less."
           : `expires in ${daysUntilExpiration} days.`;
 
-      const alertColor = "#FC5B00";
+const alertColor = "#ff5c00";
 
-      const html = `
-        <div style="margin:0; padding:0; background:#F5F5F5; font-family: Arial, Helvetica, sans-serif; color:#1A1A1A;">
-          <div style="max-width:640px; margin:0 auto; padding:24px 12px;">
-            <div style="background:#000000; border-radius:14px 14px 0 0; padding:24px; text-align:center;">
-              <div style="font-size:42px; letter-spacing:10px; color:#ffffff; font-family: Georgia, 'Times New Roman', serif;">
-                APA
-              </div>
-              <div style="font-size:13px; letter-spacing:2px; color:#ffffff; margin-top:6px;">
-                ARTIST PROTECTION ALLIANCE
-              </div>
-              <div style="font-size:11px; letter-spacing:1px; color:#FC5B00; margin-top:6px;">
-                FOUNDED BY ARTISTS • PROTECTED BY ALLIANCE
-              </div>
-            </div>
-
-            <div style="background:#ffffff; border:1px solid #2B2B2B; border-top:none; padding:28px; border-radius:0 0 14px 14px;">
-              <div style="display:inline-block; background:${alertColor}; color:#ffffff; font-size:12px; font-weight:bold; padding:6px 10px; border-radius:999px; margin-bottom:18px;">
-                Compliance Reminder
-              </div>
-
-              <h2 style="margin:0 0 16px; font-size:24px; color:#1A1A1A;">
-                ${itemName}
-              </h2>
-
-              <p style="font-size:16px; margin:0 0 16px;">
-                Hi ${memberName},
-              </p>
-
-              <p style="font-size:16px; margin:0 0 20px;">
-                Your <strong>${itemName}</strong> ${statusText}
-              </p>
-
-              <div style="background:#F5F5F5; border:1px solid #2B2B2B; border-radius:12px; padding:16px; margin:20px 0;">
-                <p style="margin:0 0 8px;"><strong>Category:</strong> ${itemCategory}</p>
-                <p style="margin:0 0 8px;"><strong>Expiration date:</strong> ${record.expires_date}</p>
-                <p style="margin:0;"><strong>Location:</strong> ${record.location_state ?? "N/A"}, ${record.location_county ?? "N/A"}</p>
-              </div>
-
-              <p style="font-size:15px; margin:20px 0;">
-                Please log in to your APA compliance dashboard to update this record.
-              </p>
-
-              <div style="border-top:1px solid #2B2B2B; margin:26px 0 18px;"></div>
-
-              <p style="font-size:13px; color:#2B2B2B; margin:0 0 10px;">
-                This is an automated notification. This inbox is not monitored and replies are not received.
-              </p>
-
-              <p style="font-size:13px; color:#2B2B2B; margin:0 0 18px;">
-                For assistance, contact
-                <a href="mailto:info@artistprotectionalliance.com" style="color:#FC5B00; font-weight:bold; text-decoration:none;">
-                  info@artistprotectionalliance.com
-                </a>.
-              </p>
-
-              <p style="font-size:12px; color:#2B2B2B; margin:0;">
-                Artist Protection Alliance<br />
-                Compliance tracking and reminder system
-              </p>
-            </div>
-          </div>
+const html = `
+  <div style="margin:0; padding:0; background:#050505; font-family: Arial, Helvetica, sans-serif; color:#ffffff;">
+    <div style="max-width:640px; margin:0 auto; padding:24px 12px;">
+      
+      <div style="background:#ffffff; border-radius:16px 16px 0 0; padding:26px 24px; text-align:center; border:1px solid rgba(255,92,0,0.28); border-bottom:none;">
+        <div style="font-size:44px; letter-spacing:10px; color:#111111; font-family: Georgia, 'Times New Roman', serif; font-weight:bold;">
+          APA
         </div>
-      `;
+        <div style="font-size:13px; letter-spacing:2px; color:#111111; margin-top:6px; font-weight:bold;">
+          ARTIST PROTECTION ALLIANCE
+        </div>
+        <div style="font-size:11px; letter-spacing:1.5px; color:#ff5c00; margin-top:8px; font-weight:bold;">
+          YOUR BUSINESS, IN ONE PLACE.
+        </div>
+      </div>
+
+      <div style="background:#151515; border:1px solid rgba(255,92,0,0.28); border-top:none; padding:30px; border-radius:0 0 16px 16px;">
+        <div style="display:inline-block; background:${alertColor}; color:#ffffff; font-size:12px; font-weight:bold; padding:7px 12px; border-radius:999px; margin-bottom:18px;">
+          Compliance Reminder
+        </div>
+
+        <h2 style="margin:0 0 16px; font-size:25px; color:#ffffff;">
+          ${itemName}
+        </h2>
+
+        <p style="font-size:16px; margin:0 0 16px; color:#e8e8e8;">
+          Hi ${memberName},
+        </p>
+
+        <p style="font-size:16px; margin:0 0 20px; color:#e8e8e8; line-height:1.6;">
+          Your <strong>${itemName}</strong> ${statusText}
+        </p>
+
+        <div style="background:#0f0f0f; border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:16px; margin:22px 0;">
+          <p style="margin:0 0 8px; color:#f3f3f3;"><strong>Category:</strong> ${itemCategory}</p>
+          <p style="margin:0 0 8px; color:#f3f3f3;"><strong>Expiration date:</strong> ${record.expires_date}</p>
+          <p style="margin:0; color:#f3f3f3;"><strong>Location:</strong> ${record.location_state ?? "N/A"}, ${record.location_county ?? "N/A"}</p>
+        </div>
+
+        <p style="font-size:15px; margin:22px 0; color:#e8e8e8; line-height:1.6;">
+          Please log in to your APA compliance dashboard to update this record.
+        </p>
+
+        <div style="border-top:1px solid rgba(255,255,255,0.14); margin:28px 0 18px;"></div>
+
+        <p style="font-size:13px; color:#a8a8a8; margin:0 0 10px; line-height:1.5;">
+          This is an automated notification. This inbox is not monitored and replies are not received.
+        </p>
+
+        <p style="font-size:13px; color:#a8a8a8; margin:0 0 18px; line-height:1.5;">
+          For assistance, contact
+          <a href="mailto:info@artistprotectionalliance.com" style="color:#ff5c00; font-weight:bold; text-decoration:none;">
+            info@artistprotectionalliance.com
+          </a>.
+        </p>
+
+        <p style="font-size:12px; color:#777777; margin:0; line-height:1.4;">
+          Artist Protection Alliance<br />
+          Compliance tracking and reminder system
+        </p>
+      </div>
+    </div>
+  </div>
+`;
 
       try {
         await sendComplianceEmail({
