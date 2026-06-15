@@ -563,7 +563,21 @@ export default function CalculatorPage() {
   const [piecePrice, setPiecePrice] = useState(300);
 
   const [materials, setMaterials] = useState(25);
-  const [boothRent, setBoothRent] = useState(40);
+const [operatingModel, setOperatingModel] = useState<
+  "independent" | "booth_rent" | "percentage_split"
+>("independent");
+const [boothRent, setBoothRent] = useState(40);
+const [artistPercentage, setArtistPercentage] = useState(70);
+const [shopPercentage, setShopPercentage] = useState(30);
+const [boothRentFrequency, setBoothRentFrequency] =
+  useState<"per_appointment" | "weekly" | "monthly">("per_appointment");
+
+const [weeklyBoothRent, setWeeklyBoothRent] = useState(0);
+const [monthlyBoothRent, setMonthlyBoothRent] = useState(0);
+const [appointmentsPerWeek, setAppointmentsPerWeek] = useState(0);
+const [appointmentsPerMonth, setAppointmentsPerMonth] = useState(0);
+const [buildExpensesIntoQuote, setBuildExpensesIntoQuote] =
+  useState(false);
   const [applyTax, setApplyTax] = useState(true);
   const [taxRate, setTaxRate] = useState(stateTaxRates.AZ);
   const [bookingInstructions, setBookingInstructions] = useState("");
@@ -587,26 +601,77 @@ export default function CalculatorPage() {
   const cityMultiplier = cityRateMultipliers[state]?.[city] || 1;
   const suggestedHourlyRate = Math.round(stateHourlyRates[state] * cityMultiplier);
 
-  const basePrice = pricingMode === "hourly" ? hourlyRate * hours : piecePrice;
-  const subtotalBeforeDiscount = basePrice + materials + boothRent;
+const basePrice = pricingMode === "hourly" ? hourlyRate * hours : piecePrice;
+
+const allocatedBoothRent =
+  operatingModel !== "booth_rent"
+    ? 0
+    : boothRentFrequency === "weekly" && appointmentsPerWeek > 0
+    ? weeklyBoothRent / appointmentsPerWeek
+    : boothRentFrequency === "monthly" && appointmentsPerMonth > 0
+    ? monthlyBoothRent / appointmentsPerMonth
+    : boothRent;
+
+const overheadAllocation =
+  operatingModel === "booth_rent" ? allocatedBoothRent : 0;
+
+const subtotalBeforeDiscount =
+  buildExpensesIntoQuote
+    ? basePrice + materials + overheadAllocation
+    : basePrice;
   const discountAmount = applyDiscount ? discount : 0;
   const taxableSubtotal = Math.max(subtotalBeforeDiscount - discountAmount, 0);
   const taxAmount = applyTax ? taxableSubtotal * (taxRate / 100) : 0;
   const total = taxableSubtotal + taxAmount;
 
-  const roundedTotal = Math.round(total / 10) * 10;
+  const roundedTotal = Math.ceil(total / 5) * 5;
   const finalTotal = Math.max(roundedTotal, minimumCharge);
 
   const depositAmount = depositRequired
   ? Math.round(finalTotal * (depositPercent / 100))
   : 0;
 
-  const profit =
-  taxableSubtotal -
-  taxAmount -
-  materials -
-  boothRent;
-  const profitMargin = basePrice > 0 ? (profit / basePrice) * 100 : 0;
+  let artistEarnings = 0;
+let shopEarnings = 0;
+
+if (operatingModel === "independent") {
+  artistEarnings =
+    taxableSubtotal -
+    materials;
+
+  shopEarnings = 0;
+}
+
+if (operatingModel === "booth_rent") {
+  artistEarnings =
+    taxableSubtotal -
+    materials -
+    allocatedBoothRent;
+
+  shopEarnings = allocatedBoothRent;
+}
+
+if (operatingModel === "percentage_split") {
+  const splitRevenue =
+    Math.max(basePrice - discountAmount, 0);
+
+  const artistGrossShare =
+    splitRevenue * (artistPercentage / 100);
+
+  artistEarnings =
+    artistGrossShare -
+    materials;
+
+  shopEarnings =
+    splitRevenue * (shopPercentage / 100);
+}
+
+const profit = artistEarnings;
+
+const profitMargin =
+  taxableSubtotal > 0
+    ? (artistEarnings / taxableSubtotal) * 100
+    : 0;
 
   const confidenceMessage =
     profitMargin < 30
@@ -894,64 +959,68 @@ async function sendQuoteEmail() {
   }
 
   try {
-    // 1. Create quote link automatically
-    const linkResponse = await fetch("/api/create-quote", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        shopName,
-        artistName,
-        artistContact,
-        shopEmail,
-        clientName,
-        clientEmail,
-        tattooDescription,
-        pricingMode,
-        hours: pricingMode === "hourly" ? hours : null,
-        total: finalTotal,
-        discount: discountAmount,
-        bookingLink,
-        bookingInstructions,
+    // 1. Create or reuse quote link
+let fullQuoteLink = quoteLink;
 
-        depositRequired,
-        depositPercent,
-        depositAmount,
-        depositDueHours,
-        paymentInstructions,
-      }),
-    });
+if (!fullQuoteLink) {
+  const linkResponse = await fetch("/api/create-quote", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      shopName,
+      artistName,
+      artistContact,
+      shopEmail,
+      clientName,
+      clientEmail,
+      tattooDescription,
+      pricingMode,
+      hours: pricingMode === "hourly" ? hours : null,
+      total: finalTotal,
+      discount: discountAmount,
+      bookingLink,
+      bookingInstructions,
 
-    const linkText = await linkResponse.text();
+      depositRequired,
+      depositPercent,
+      depositAmount,
+      depositDueHours,
+      paymentInstructions,
+    }),
+  });
 
-    let linkData: any = {};
+  const linkText = await linkResponse.text();
 
-    try {
-      linkData = JSON.parse(linkText);
-    } catch {
-      console.error("RAW RESPONSE FROM /api/create-quote:", linkText);
-      alert("Quote link could not be created. Check your terminal.");
-      return;
-    }
+  let linkData: any = {};
 
-    if (!linkResponse.ok) {
-      console.error("QUOTE LINK ERROR:", linkData);
-      alert("Quote link error: " + JSON.stringify(linkData));
-      return;
-    }
+  try {
+    linkData = JSON.parse(linkText);
+  } catch {
+    console.error("RAW RESPONSE FROM /api/create-quote:", linkText);
+    alert("Quote link could not be created. Check your terminal.");
+    return;
+  }
 
-    if (!linkData.quoteUrl) {
-      alert("Quote created but no link returned.");
-      return;
-    }
+  if (!linkResponse.ok) {
+    console.error("QUOTE LINK ERROR:", linkData);
+    alert("Quote link error: " + JSON.stringify(linkData));
+    return;
+  }
 
-    const appBaseUrl =
-  process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+  if (!linkData.quoteUrl) {
+    alert("Quote created but no link returned.");
+    return;
+  }
 
-    const fullQuoteLink = `${appBaseUrl}${linkData.quoteUrl}`;
+  const appBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
 
-    setQuoteLink(fullQuoteLink);
+  fullQuoteLink = `${appBaseUrl}${linkData.quoteUrl}`;
+
+  setQuoteLink(fullQuoteLink);
+}
 
     // 2. Send email WITH link
     const emailResponse = await fetch("/api/send-quote", {
@@ -1093,6 +1162,7 @@ async function createQuoteLink() {
 
   const inputStyle = {
     width: "100%",
+    height: 48,
     padding: 14,
     borderRadius: 10,
     border: "1px solid #bbb",
@@ -1264,6 +1334,16 @@ function InfoTip({ text }: { text: string }) {
     <p style={{ color: "#666", fontSize: 14 }}>
       Calculated Deposit: <strong>${depositAmount.toFixed(0)}</strong>
     </p>
+    <p
+  style={{
+    color: "#aaa",
+    fontSize: 13,
+    lineHeight: 1.5,
+    marginTop: 8,
+  }}
+>
+  Deposits secure the appointment and are applied toward the final service total. Applicable taxes may be collected or adjusted at the time of service.
+</p>
 
     <label>Payment Instructions</label>
     <textarea
@@ -1387,12 +1467,154 @@ function InfoTip({ text }: { text: string }) {
             </>
           )}
 
-          <label>Materials / Supplies</label>
-          <input style={inputStyle} type="number" value={materials} onChange={(e) => setMaterials(Number(e.target.value))} />
+<label>
+  Materials / Supplies (Per Appointment)
+  <InfoTip text="Enter the estimated cost of supplies used specifically for this appointment, such as needles, gloves, barriers, ink, jewelry, disposables, or other service materials." />
+</label>
+<input
+  style={inputStyle}
+  type="number"
+  value={materials}
+  onChange={(e) => setMaterials(Number(e.target.value))}
+/>
 
-          <label>Shop / Booth Rent Allocation</label>
-          <input style={inputStyle} type="number" value={boothRent} onChange={(e) => setBoothRent(Number(e.target.value))} />
+<label>Operating Model</label>
+<select
+  style={inputStyle}
+  value={operatingModel}
+  onChange={(e) =>
+    setOperatingModel(
+      e.target.value as "independent" | "booth_rent" | "percentage_split"
+    )
+  }
+>
+  <option value="independent">Independent Studio / Shop Owner</option>
+  <option value="booth_rent">Booth Rent</option>
+  <option value="percentage_split">Percentage Split</option>
+</select>
 
+<label style={{ display: "block", marginTop: 12 }}>
+  <input
+    type="checkbox"
+    checked={buildExpensesIntoQuote}
+    onChange={(e) =>
+      setBuildExpensesIntoQuote(e.target.checked)
+    }
+  />{" "}
+  Build Materials & Rent Into Client Quote
+</label>
+
+<p
+  style={{
+    color: "#666",
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: 14,
+  }}
+>
+When enabled, expenses are built into the client quote so your pricing reflects the true cost of doing business.
+</p>
+
+{operatingModel === "booth_rent" && (
+  <>
+    <label>Booth Rent Frequency</label>
+    <select
+      style={inputStyle}
+      value={boothRentFrequency}
+      onChange={(e) =>
+        setBoothRentFrequency(
+          e.target.value as "per_appointment" | "weekly" | "monthly"
+        )
+      }
+    >
+      <option value="per_appointment">Per Appointment</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+    </select>
+
+    {boothRentFrequency === "per_appointment" && (
+      <>
+        <label>
+          Booth Rent Allocated To This Appointment
+          <InfoTip text="Enter the portion of booth rent assigned to this appointment. Example: if monthly rent is $1,200 and you average 60 appointments per month, enter $20." />
+        </label>
+        <input
+          style={inputStyle}
+          type="number"
+          value={boothRent}
+          onChange={(e) => setBoothRent(Number(e.target.value))}
+        />
+      </>
+    )}
+
+    {boothRentFrequency === "weekly" && (
+      <>
+        <label>Weekly Booth Rent</label>
+        <input
+          style={inputStyle}
+          type="number"
+          value={weeklyBoothRent}
+          onChange={(e) => setWeeklyBoothRent(Number(e.target.value))}
+        />
+
+        <label>Appointments Per Week</label>
+        <input
+          style={inputStyle}
+          type="number"
+          value={appointmentsPerWeek}
+          onChange={(e) => setAppointmentsPerWeek(Number(e.target.value))}
+        />
+      </>
+    )}
+
+    {boothRentFrequency === "monthly" && (
+      <>
+        <label>Monthly Booth Rent</label>
+        <input
+          style={inputStyle}
+          type="number"
+          value={monthlyBoothRent}
+          onChange={(e) => setMonthlyBoothRent(Number(e.target.value))}
+        />
+
+        <label>Appointments Per Month</label>
+        <input
+          style={inputStyle}
+          type="number"
+          value={appointmentsPerMonth}
+          onChange={(e) => setAppointmentsPerMonth(Number(e.target.value))}
+        />
+      </>
+    )}
+  </>
+)}
+{operatingModel === "percentage_split" && (
+  <>
+    <label>Artist Percentage (%)</label>
+    <input
+      style={inputStyle}
+      type="number"
+      value={artistPercentage}
+      onChange={(e) => {
+        const value = Number(e.target.value);
+        setArtistPercentage(value);
+        setShopPercentage(100 - value);
+      }}
+    />
+
+    <label>Shop Percentage (%)</label>
+    <input
+      style={inputStyle}
+      type="number"
+      value={shopPercentage}
+      onChange={(e) => {
+        const value = Number(e.target.value);
+        setShopPercentage(value);
+        setArtistPercentage(100 - value);
+      }}
+    />
+  </>
+)}
           <label style={{ display: "block", marginTop: 12 }}>
             <input type="checkbox" checked={applyTax} onChange={(e) => setApplyTax(e.target.checked)} /> Apply State Tax
           </label>
@@ -1492,6 +1714,15 @@ function InfoTip({ text }: { text: string }) {
     {pricingMode === "hourly" && <p><strong>Hours:</strong> {hours}</p>}
 
     <p>
+  <strong>Operating Model:</strong>{" "}
+  {operatingModel === "independent"
+    ? "Independent Studio / Shop Owner"
+    : operatingModel === "booth_rent"
+    ? "Booth Rent"
+    : "Percentage Split"}
+</p>
+
+    <p>
       <strong>
         {professionType === "piercer"
           ? "Base Piercing Price"
@@ -1503,15 +1734,14 @@ function InfoTip({ text }: { text: string }) {
 
     <p><strong>Materials / Supplies:</strong> ${materials.toFixed(2)}</p>
 
-    <p>
-  <strong>Estimated Overhead Allocation:</strong>
-  <InfoTip text="Represents a portion of rent, utilities, software, insurance, admin costs, supplies, and other business expenses allocated to this service." />
-  {" "}
-  ${boothRent.toFixed(2)}
-</p>
-    <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
-      
-    </p>
+{operatingModel === "booth_rent" && (
+  <p>
+    <strong>Booth Rent Allocation:</strong>
+    <InfoTip text="Represents a portion of rent, utilities, software, insurance, admin costs, supplies, and other business expenses allocated to this service." />
+    {" "}
+    ${overheadAllocation.toFixed(2)}
+  </p>
+)}
 
     <p><strong>Applied Discount:</strong> -${discountAmount.toFixed(2)}</p>
     <p><strong>Tax:</strong> ${taxAmount.toFixed(2)}</p>
@@ -1529,11 +1759,21 @@ function InfoTip({ text }: { text: string }) {
         marginBottom: 22,
       }}
     >
-      <p>
-        <strong>Estimated Earnings After Expenses:</strong>
-<InfoTip text="Calculated after discounts, taxes, materials, and estimated overhead costs. This estimate does not include income taxes, financing costs, payment processing fees, or shop percentage splits unless included in your overhead allocation." />{" "}
-        ${profit.toFixed(2)}
-      </p>
+<p>
+  <strong>Estimated Artist Earnings:</strong>
+  <InfoTip text="Estimated take-home earnings based on the selected operating model." />
+  {" "}
+  ${artistEarnings.toFixed(2)}
+</p>
+
+{shopEarnings > 0 && (
+  <p>
+    <strong>Estimated Shop Earnings:</strong>
+    <InfoTip text="Estimated earnings allocated to the shop through booth rent or percentage split." />
+    {" "}
+    ${shopEarnings.toFixed(2)}
+  </p>
+)}
 
       <p style={{ color: "#aaa", fontSize: 13, lineHeight: 1.5, marginTop: -6 }}>
         
@@ -1629,7 +1869,7 @@ function InfoTip({ text }: { text: string }) {
       </p>
 
       <p>
-        <strong>Subtotal:</strong> Base price plus materials and estimated overhead allocation.
+        <strong>Subtotal:</strong> Base artist price plus applicable materials, overhead allocation, and any selected operating costs.
       </p>
 
       <p>
@@ -1642,9 +1882,7 @@ function InfoTip({ text }: { text: string }) {
 
       <p>
   <strong>Estimated earnings after expenses:</strong>
-  Calculated from the client subtotal after discounts, then reduced by tax,
-  materials, and estimated overhead allocation. This provides a closer estimate
-  of actual take-home revenue from the service.
+     Calculated from the client subtotal after discounts and taxes, then adjusted for materials, overhead allocation, booth rent, and any artist/shop percentage split. This provides a closer estimate of actual take-home revenue from the service.
 </p>
 
       <p>

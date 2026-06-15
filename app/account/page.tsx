@@ -797,14 +797,17 @@ const logoutButton: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  marginTop: "8px",
+  margin: 0,
   background: "#121212",
   color: "white",
   border: "1px solid rgba(255,255,255,0.08)",
-  borderRadius: "12px",
-  padding: "12px",
-  fontSize: "15px",
-  fontWeight: 600,
+  borderRadius: "14px",
+  padding: "12px 14px",
+  fontSize: "18px",
+  fontWeight: 700,
+  lineHeight: 1.5,
   outline: "none",
   width: "100%",
+  minHeight: "52px",
+  cursor: "pointer",
 };

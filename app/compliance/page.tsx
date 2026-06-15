@@ -82,6 +82,7 @@ type ComplianceLogEntry = {
   machine_id?: string | null;
   service_performed?: string | null;
   technician_vendor?: string | null;
+  archived?: boolean;
 };
 
 type StateOption = {
@@ -146,8 +147,85 @@ const stateNameMap: Record<string, string> = {
   Washington: "Washington",
 };
 
+function downloadCsv(filename: string, rows: Record<string, string | number | null | undefined>[]) {
+  if (!rows.length) return;
+
+  const headers = Object.keys(rows[0]);
+
+  const escapeCsvValue = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return "";
+    const stringValue = String(value);
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  };
+
+  const csvContent = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers.map((header) => escapeCsvValue(row[header])).join(",")
+    ),
+  ].join("\n");
+
+  const blob = new Blob([csvContent], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
+function formatDateForInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function formatStateLabel(stateCode: string) {
   return stateNameMap[stateCode] || stateCode;
+}
+function getRecordSpecificity(record: UserComplianceRecord) {
+  const item = record.compliance_items as any;
+
+  if (record.location_county || item?.county) return 3;
+  if (record.location_state || item?.state) return 2;
+  return 1;
+}
+
+function applyRequirementRecordOverrides(records: UserComplianceRecord[]) {
+  const requirementMap = new Map<string, UserComplianceRecord>();
+
+  for (const record of records) {
+    const key = getDisplayRequirementName(record).trim().toLowerCase();
+    const existing = requirementMap.get(key);
+
+    if (!existing) {
+      requirementMap.set(key, record);
+      continue;
+    }
+
+    if (getRecordSpecificity(record) > getRecordSpecificity(existing)) {
+      requirementMap.set(key, record);
+      continue;
+    }
+
+    if (
+      getRecordSpecificity(record) === getRecordSpecificity(existing) &&
+      record.id > existing.id
+    ) {
+      requirementMap.set(key, record);
+    }
+  }
+
+  return Array.from(requirementMap.values());
 }
 
 function isBloodbornePathogensRequirement(name?: string | null, category?: string | null) {
@@ -208,6 +286,10 @@ const [categoryFilter, setCategoryFilter] = useState("all");
 const [documentSearchTerm, setDocumentSearchTerm] = useState("");
 const [showExcludedItems, setShowExcludedItems] = useState(false);
 const [documentVaultOpen, setDocumentVaultOpen] = useState(false);
+const [archivedLogsOpen, setArchivedLogsOpen] = useState(false);
+
+const [archivedSearch, setArchivedSearch] =
+  useState("");
 
 const [logTypes, setLogTypes] =
   useState<ComplianceLogType[]>([]);
@@ -220,6 +302,9 @@ const [showLogs, setShowLogs] =
 const [activeLogKey, setActiveLogKey] = useState<string | null>(null);
 const [openLogHistory, setOpenLogHistory] =
   useState<string | null>(null);
+const [logExportStartDate, setLogExportStartDate] = useState("");
+const [reportDisplayName, setReportDisplayName] = useState("");
+const [logExportEndDate, setLogExportEndDate] = useState("");
 const [sporeTestForm, setSporeTestForm] = useState({
   entry_date: "",
   result: "pass",
@@ -267,6 +352,21 @@ const [jewelrySterilizationForm, setJewelrySterilizationForm] = useState({
   result: "pass",
   notes: "",
 });
+const [inspectionChecklistForm, setInspectionChecklistForm] = useState({
+  entry_date: "",
+  employee_initials: "",
+  licenses_posted: false,
+  bbp_current: false,
+  consent_forms_available: false,
+  aftercare_available: false,
+  sharps_compliant: false,
+  spore_tests_current: false,
+  autoclave_records_available: false,
+  biohazard_records_available: false,
+  required_signage_posted: false,
+  handwashing_sink_compliant: false,
+  notes: "",
+});
 const [isAllianceMember, setIsAllianceMember] =
   useState(false);
 
@@ -278,12 +378,715 @@ const COMPLIANCE_COUNTY_KEY = "apa_compliance_county";
 
 const userId = 1;
 const [authUserId, setAuthUserId] = useState<string | null>(null);
+function exportComplianceLogsCsv(logKey?: string) {
+const logsToExport = logEntries.filter((entry) => {
+  if (logKey && entry.log_type_key !== logKey) return false;
 
+  if (logExportStartDate && entry.entry_date < logExportStartDate) {
+    return false;
+  }
+
+  if (logExportEndDate && entry.entry_date > logExportEndDate) {
+    return false;
+  }
+
+  return true;
+});
+
+if (!logsToExport.length) {
+  alert("No compliance log entries match this export date range.");
+  setMessage("No compliance log entries match this export date range.");
+  return;
+} 
+
+  const rows = logsToExport.map((entry) => {
+    const logType = logTypes.find((log) => log.key === entry.log_type_key);
+
+    return {
+      "Log Type": logType?.name || entry.log_type_key,
+      "Entry Date": entry.entry_date,
+      Result: entry.result || "",
+      Notes: entry.notes || "",
+      "Machine ID": entry.machine_id || "",
+      "Service Performed": entry.service_performed || "",
+      "Technician / Vendor": entry.technician_vendor || "",
+      Fields: entry.fields
+  ? Object.entries(entry.fields)
+      .map(([key, value]) => {
+        const label = key
+          .replaceAll("_", " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+
+        return `${label}: ${value ?? ""}`;
+      })
+      .join(" | ")
+  : "",
+    };
+  });
+
+  const fileLabel = logKey ? logKey.replaceAll("_", "-") : "all-compliance-logs";
+
+  downloadCsv(`apa-${fileLabel}-export.csv`, rows);
+  setMessage("Compliance log CSV export downloaded.");
+}
+function exportComplianceLogsPdf(logKey?: string) {
+  const logsToExport = logEntries.filter((entry) => {
+        if (logKey && entry.log_type_key !== logKey) return false;
+
+    if (logExportStartDate && entry.entry_date < logExportStartDate) {
+      return false;
+    }
+
+    if (logExportEndDate && entry.entry_date > logExportEndDate) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!logsToExport.length) {
+    alert("No compliance log entries match this export date range.");
+    setMessage("No compliance log entries match this export date range.");
+    return;
+  }
+
+  const reportWindow = window.open("", "_blank");
+
+  if (!reportWindow) {
+    alert("Please allow pop-ups to export the audit PDF.");
+    return;
+  }
+
+  const groupedLogs = logTypes
+    .map((log) => ({
+      log,
+      entries: logsToExport.filter(
+        (entry) => entry.log_type_key === log.key
+      ),
+    }))
+    .filter((group) => group.entries.length > 0);
+
+    const totalEntries = logsToExport.length;
+
+const summaryHtml = groupedLogs
+  .map(
+    (group) => `
+      <tr>
+        <td>${group.log.name}</td>
+        <td>${group.entries.length}</td>
+      </tr>
+    `
+  )
+  .join("");
+
+  const dateRangeLabel =
+    logExportStartDate || logExportEndDate
+      ? `${logExportStartDate || "Beginning"} to ${
+          logExportEndDate || "Today"
+        }`
+      : "All dates";
+
+  const generatedDate = new Date().toLocaleString();
+  const reportStateLabel = state ? formatStateLabel(state) : "Not selected";
+  const reportCountyLabel = county || "Not selected";
+
+  const formatFieldsForReport = (fields: Record<string, any> | null) => {
+    if (!fields) return "";
+
+    return Object.entries(fields)
+      .map(([key, value]) => {
+        const label = key
+          .replaceAll("_", " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+
+        return `${label}: ${value ?? ""}`;
+      })
+      .join(" | ");
+  };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>Compliance Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            color: #111;
+            padding: 32px;
+          }
+
+          h1 {
+            color: #FC5B00;
+            margin-bottom: 4px;
+          }
+
+          h2 {
+            border-bottom: 2px solid #FC5B00;
+            padding-bottom: 6px;
+            margin-top: 32px;
+          }
+
+          .meta {
+            margin-bottom: 24px;
+            color: #444;
+            font-size: 14px;
+          }
+
+          .entry {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+          }
+
+          .label {
+            font-weight: bold;
+          }
+
+          .small {
+            font-size: 13px;
+            color: #555;
+          }
+
+          @media print {
+            button {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <button onclick="window.print()">Save / Print PDF</button>
+
+        <h1>Compliance Report</h1>
+
+        <div
+  style="
+    color:#666;
+    font-size:14px;
+    margin-bottom:16px;
+  "
+>
+  Generated by Artist Protection Alliance
+</div>
+
+        <div class="meta">
+          <div><span class="label">Prepared For:</span> ${escapeHtml(reportDisplayName || "Compliance User")}</div>
+          <div><span class="label">State:</span> ${escapeHtml(reportStateLabel)}</div>
+          <div><span class="label">County:</span> ${escapeHtml(reportCountyLabel)}</div>
+          <div><span class="label">Generated:</span> ${escapeHtml(generatedDate)}</div>
+          <div><span class="label">Date Range:</span> ${escapeHtml(dateRangeLabel)}</div>
+        </div>
+        <h2>Audit Summary</h2>
+
+<div class="entry">
+  <div>
+    <span class="label">Total Log Entries:</span>
+    ${totalEntries}
+  </div>
+
+  <div style="margin-top:10px;">
+    <table
+      style="
+        width:100%;
+        border-collapse:collapse;
+      "
+    >
+      <thead>
+        <tr>
+          <th
+            style="
+              text-align:left;
+              border-bottom:1px solid #ddd;
+              padding:6px;
+            "
+          >
+            Log Type
+          </th>
+
+          <th
+            style="
+              text-align:left;
+              border-bottom:1px solid #ddd;
+              padding:6px;
+            "
+          >
+            Entries
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        ${summaryHtml}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+        ${groupedLogs
+          .map(
+            (group) => `
+              <h2>${escapeHtml(group.log.name)}</h2>
+
+              ${group.entries
+                .map(
+                  (entry) => `
+                    <div class="entry">
+                      <div><span class="label">Entry Date:</span> ${escapeHtml(entry.entry_date || "")}</div>
+                      <div><span class="label">Result:</span> ${escapeHtml(entry.result || "")}</div>
+                      <div><span class="label">Machine ID:</span> ${escapeHtml(entry.machine_id || "")}</div>
+                      <div><span class="label">Service Performed:</span> ${escapeHtml(entry.service_performed || "")}</div>
+                      <div><span class="label">Technician / Vendor:</span> ${escapeHtml(entry.technician_vendor || "")}</div>
+                      <div><span class="label">Notes:</span> ${escapeHtml(entry.notes || "")}</div>
+                      <div class="small">${escapeHtml(formatFieldsForReport(entry.fields))}</div>
+                    </div>
+                  `
+                )
+                .join("")}
+            `
+          )
+          .join("")}
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+  setMessage("Compliance audit PDF report opened.");
+}
 useEffect(() => {
   hydrateProfile();
   loadLocationOptions();
   loadSharingPreference();
 }, []);
+
+function exportRequirementsPdf() {
+  const recordsToExport = visibleRequirementRecords;
+
+  if (!recordsToExport.length) {
+    alert("No compliance requirement records are available to export.");
+    setMessage("No compliance requirement records are available to export.");
+    return;
+  }
+
+  const reportWindow = window.open("", "_blank");
+
+  if (!reportWindow) {
+    alert("Please allow pop-ups to export the requirements PDF.");
+    return;
+  }
+
+  const generatedDate = new Date().toLocaleString();
+  const reportStateLabel = state ? formatStateLabel(state) : "Not selected";
+  const reportCountyLabel = county || "Not selected";
+
+  const escapeHtml = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>Compliance Requirements Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            color: #111;
+            padding: 32px;
+          }
+
+          h1 {
+            color: #FC5B00;
+            margin-bottom: 4px;
+          }
+
+          h2 {
+            border-bottom: 2px solid #FC5B00;
+            padding-bottom: 6px;
+            margin-top: 32px;
+          }
+
+          .meta {
+            margin-bottom: 24px;
+            color: #444;
+            font-size: 14px;
+          }
+
+          .entry {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+          }
+
+          .label {
+            font-weight: bold;
+          }
+
+          .small {
+            font-size: 13px;
+            color: #555;
+          }
+
+          @media print {
+            button {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <button onclick="window.print()">Save / Print PDF</button>
+
+        <h1>Compliance Requirements Report</h1>
+
+        <div style="color:#666;font-size:14px;margin-bottom:16px;">
+          Generated by Artist Protection Alliance
+        </div>
+
+        <div class="meta">
+          <div><span class="label">Prepared For:</span> ${escapeHtml(reportDisplayName || "Compliance User")}</div>
+          <div><span class="label">State:</span> ${escapeHtml(reportStateLabel)}</div>
+          <div><span class="label">County:</span> ${escapeHtml(reportCountyLabel)}</div>
+          <div><span class="label">Generated:</span> ${escapeHtml(generatedDate)}</div>
+        </div>
+
+        <h2>Requirement Summary</h2>
+
+        <div class="entry">
+          <div><span class="label">Total Requirements:</span> ${recordsToExport.length}</div>
+          <div><span class="label">Current:</span> ${
+            recordsToExport.filter((record) => getStatus(record.expires_date) === "Active").length
+          }</div>
+          <div><span class="label">Needs Action:</span> ${
+            recordsToExport.filter((record) => getStatus(record.expires_date) !== "Active").length
+          }</div>
+        </div>
+
+        <h2>Requirement Records</h2>
+
+        ${recordsToExport
+          .map(
+            (record) => `
+              <div class="entry">
+                <div><span class="label">Requirement:</span> ${escapeHtml(getDisplayRequirementName(record))}</div>
+                <div><span class="label">Category:</span> ${escapeHtml(getDisplayRequirementCategory(record))}</div>
+                <div><span class="label">Status:</span> ${escapeHtml(getStatus(record.expires_date))}</div>
+                <div><span class="label">Completed:</span> ${escapeHtml(record.completed_date || "Not completed")}</div>
+                <div><span class="label">Expires:</span> ${escapeHtml(record.expires_date || "No expiration date")}</div>
+                <div><span class="label">Document:</span> ${escapeHtml(record.document_name || "No document uploaded")}</div>
+                <div class="small">${escapeHtml(record.compliance_items?.description || "")}</div>
+              </div>
+            `
+          )
+          .join("")}
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+  setMessage("Compliance requirements PDF report opened.");
+}
+
+function exportFullComplianceReportPdf() {
+  const recordsToExport = visibleRequirementRecords;
+
+  const logsToExport = logEntries.filter((entry) => {
+    if (logExportStartDate && entry.entry_date < logExportStartDate) {
+      return false;
+    }
+
+    if (logExportEndDate && entry.entry_date > logExportEndDate) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!recordsToExport.length && !logsToExport.length) {
+    alert("No compliance records are available to export.");
+    setMessage("No compliance records are available to export.");
+    return;
+  }
+
+  const reportWindow = window.open("", "_blank");
+
+  if (!reportWindow) {
+    alert("Please allow pop-ups to export the full compliance report.");
+    return;
+  }
+
+  const generatedDate = new Date().toLocaleString();
+  const reportStateLabel = state ? formatStateLabel(state) : "Not selected";
+  const reportCountyLabel = county || "Not selected";
+
+  const dateRangeLabel =
+    logExportStartDate || logExportEndDate
+      ? `${logExportStartDate || "Beginning"} to ${
+          logExportEndDate || "Today"
+        }`
+      : "All dates";
+
+  const escapeHtml = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  const formatFieldsForReport = (fields: Record<string, any> | null) => {
+    if (!fields) return "";
+
+    return Object.entries(fields)
+      .map(([key, value]) => {
+        const label = key
+          .replaceAll("_", " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+
+        return `${label}: ${value ?? ""}`;
+      })
+      .join(" | ");
+  };
+
+  const groupedLogs = logTypes
+    .map((log) => ({
+      log,
+      entries: logsToExport.filter(
+        (entry) => entry.log_type_key === log.key
+      ),
+    }))
+    .filter((group) => group.entries.length > 0);
+
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>Full Compliance Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            color: #111;
+            padding: 32px;
+          }
+
+          h1 {
+            color: #FC5B00;
+            margin-bottom: 4px;
+          }
+
+          h2 {
+            border-bottom: 2px solid #FC5B00;
+            padding-bottom: 6px;
+            margin-top: 32px;
+          }
+
+          h3 {
+            margin-top: 24px;
+          }
+
+          .meta {
+            margin-bottom: 24px;
+            color: #444;
+            font-size: 14px;
+          }
+
+          .entry {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+          }
+
+          .label {
+            font-weight: bold;
+          }
+
+          .small {
+            font-size: 13px;
+            color: #555;
+          }
+
+          @media print {
+            button {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <button onclick="window.print()">Save / Print PDF</button>
+
+        <h1>Full Compliance Report</h1>
+
+        <div style="color:#666;font-size:14px;margin-bottom:16px;">
+          Generated by Artist Protection Alliance
+        </div>
+
+        <div class="meta">
+          <div><span class="label">Prepared For:</span> ${escapeHtml(reportDisplayName || "Compliance User")}</div>
+          <div><span class="label">State:</span> ${escapeHtml(reportStateLabel)}</div>
+          <div><span class="label">County:</span> ${escapeHtml(reportCountyLabel)}</div>
+          <div><span class="label">Generated:</span> ${escapeHtml(generatedDate)}</div>
+          <div><span class="label">Log Date Range:</span> ${escapeHtml(dateRangeLabel)}</div>
+        </div>
+
+        <h2>Requirement Summary</h2>
+
+        <div class="entry">
+          <div><span class="label">Total Requirements:</span> ${recordsToExport.length}</div>
+          <div><span class="label">Current:</span> ${
+            recordsToExport.filter((record) => getStatus(record.expires_date) === "Active").length
+          }</div>
+          <div><span class="label">Needs Action:</span> ${
+            recordsToExport.filter((record) => getStatus(record.expires_date) !== "Active").length
+          }</div>
+        </div>
+
+        <h2>Requirement Records</h2>
+
+        ${recordsToExport
+          .map(
+            (record) => `
+              <div class="entry">
+                <div><span class="label">Requirement:</span> ${escapeHtml(getDisplayRequirementName(record))}</div>
+                <div><span class="label">Category:</span> ${escapeHtml(getDisplayRequirementCategory(record))}</div>
+                <div><span class="label">Status:</span> ${escapeHtml(getStatus(record.expires_date))}</div>
+                <div><span class="label">Completed:</span> ${escapeHtml(record.completed_date || "Not completed")}</div>
+                <div><span class="label">Expires:</span> ${escapeHtml(record.expires_date || "No expiration date")}</div>
+                <div><span class="label">Document:</span> ${escapeHtml(record.document_name || "No document uploaded")}</div>
+                <div class="small">${escapeHtml(record.compliance_items?.description || "")}</div>
+              </div>
+            `
+          )
+          .join("")}
+
+        <h2>Compliance Log Summary</h2>
+
+        <div class="entry">
+          <div><span class="label">Total Log Entries:</span> ${logsToExport.length}</div>
+          <div><span class="label">Date Range:</span> ${escapeHtml(dateRangeLabel)}</div>
+        </div>
+
+        <h2>Compliance Log Records</h2>
+
+        ${groupedLogs
+          .map(
+            (group) => `
+              <h3>${escapeHtml(group.log.name)}</h3>
+
+              ${group.entries
+                .map(
+                  (entry) => `
+                    <div class="entry">
+                      <div><span class="label">Entry Date:</span> ${escapeHtml(entry.entry_date || "")}</div>
+                      <div><span class="label">Result:</span> ${escapeHtml(entry.result || "")}</div>
+                      <div><span class="label">Machine ID:</span> ${escapeHtml(entry.machine_id || "")}</div>
+                      <div><span class="label">Service Performed:</span> ${escapeHtml(entry.service_performed || "")}</div>
+                      <div><span class="label">Technician / Vendor:</span> ${escapeHtml(entry.technician_vendor || "")}</div>
+                      <div><span class="label">Notes:</span> ${escapeHtml(entry.notes || "")}</div>
+                      <div class="small">${escapeHtml(formatFieldsForReport(entry.fields))}</div>
+                    </div>
+                  `
+                )
+                .join("")}
+            `
+          )
+          .join("")}
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+  setMessage("Full compliance report opened.");
+}
+<div style={styles.card}>
+  <h2 style={styles.sectionTitle}>Archived Compliance Logs</h2>
+
+  <p style={styles.helperText}>
+    Archived logs are retained for audit history and can be restored at any time.
+  </p>
+
+  {logEntries.filter((entry) => entry.archived).length === 0 ? (
+    <p style={styles.emptyText}>No archived compliance logs.</p>
+  ) : (
+    logTypes.map((log) => {
+      const archivedEntries = logEntries.filter(
+        (entry) => entry.log_type_key === log.key && entry.archived
+      );
+
+      const filteredArchivedEntries = archivedEntries.filter(
+  (entry) => {
+    const search = archivedSearch.toLowerCase();
+
+    const logName =
+      logTypes
+        .find((log) => log.key === entry.log_type_key)
+        ?.name?.toLowerCase() || "";
+
+    return (
+      logName.includes(search) ||
+      entry.result?.toLowerCase().includes(search) ||
+      entry.notes?.toLowerCase().includes(search) ||
+      entry.entry_date?.includes(search)
+    );
+  }
+);
+
+      if (archivedEntries.length === 0) return null;
+
+      return (
+        <div key={`archived-${log.key}`} style={styles.logCard}>
+          <h3 style={styles.logTitle}>{log.name}</h3>
+
+          {archivedEntries.map((entry) => (
+            <div key={entry.id} style={styles.historyItem}>
+              <p>
+                <strong>Date:</strong> {entry.entry_date || "Not recorded"}
+              </p>
+
+              {entry.result && (
+                <p>
+                  <strong>Result:</strong> {entry.result}
+                </p>
+              )}
+
+              {entry.notes && (
+                <p>
+                  <strong>Notes:</strong> {entry.notes}
+                </p>
+              )}
+
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => restoreComplianceLogEntry(entry.id)}
+              >
+                Restore Log
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    })
+  )}
+</div>
 
 useEffect(() => {
   if (!locationsReady || !state || !authUserId) return;
@@ -305,11 +1108,12 @@ async function hydrateProfile() {
     }
 
 setAuthUserId(user.id);
+setReportDisplayName(user.email || "Compliance User");
 
     const { data: profile, error: profileError } =
       await supabase
         .from("profiles")
-        .select("profession_type, membership_tier")
+        .select("profession_type, membership_tier, artist_name, shop_name, email")
         .eq("id", user.id)
         .single();
 
@@ -320,6 +1124,15 @@ setAuthUserId(user.id);
       );
       return;
     }
+
+    const resolvedReportName =
+  profile?.shop_name ||
+  profile?.artist_name ||
+  profile?.email ||
+  user.email ||
+  "Compliance User";
+
+setReportDisplayName(resolvedReportName);
 
     if (
       profile?.profession_type === "piercer" ||
@@ -1142,6 +1955,20 @@ function shouldCountTowardComplianceScore(record: UserComplianceRecord) {
 
   return !ongoingKeywords.some((keyword) => combined.includes(keyword));
 }
+
+// Hide unfinished county placeholder requirements from the UI only.
+// DO NOT deactivate these in Supabase because they are currently used
+// to populate the county dropdown.
+function isCountyPlaceholderRequirement(record: UserComplianceRecord) {
+  return (
+    getDisplayRequirementName(record)
+      .trim()
+      .toLowerCase() ===
+    "county-level tattoo compliance review"
+  );
+}
+
+
 function isComplianceLogRequirement(record: UserComplianceRecord) {
   const name = getDisplayRequirementName(record).toLowerCase();
   const category = getDisplayRequirementCategory(record).toLowerCase();
@@ -1233,8 +2060,12 @@ const visibleRecords = filteredRecords;
 
 const visibleLogTypes = logTypes.filter((log) => shouldShowLogType(log));
 
-const visibleRequirementRecords = visibleRecords.filter(
-  (record) => !isComplianceLogRequirement(record)
+const visibleRequirementRecords = applyRequirementRecordOverrides(
+  visibleRecords.filter(
+    (record) =>
+      !isComplianceLogRequirement(record) &&
+      !isCountyPlaceholderRequirement(record)
+  )
 );
 
   const categoryOptions = useMemo(() => {
@@ -1648,10 +2479,15 @@ function renderDocumentVault() {
 
           <h2 style={styles.sectionTitle}>Document Vault</h2>
 
-          <p style={styles.helperText}>
-            Reference previous and current compliance documents when needed.
-            This stays collapsed so your main dashboard stays focused.
-          </p>
+          <p
+  style={{
+    ...styles.helperText,
+    maxWidth: "980px",
+    lineHeight: "1.5",
+  }}
+>
+  Current and previously uploaded compliance documents. Replaced uploads are retained in document history for reference. Compliance log entries are managed separately in Compliance Logs.
+</p>
         </div>
 
         <div
@@ -1697,11 +2533,14 @@ function renderDocumentVault() {
         <>
           <div style={styles.vaultSearchRow}>
             <input
-              style={styles.input}
-              value={documentSearchTerm}
-              placeholder="Search document vault by file, requirement, category, state, or county..."
-              onChange={(e) => setDocumentSearchTerm(e.target.value)}
-            />
+  style={{
+    ...styles.input,
+    width: "100%",
+  }}
+  value={documentSearchTerm}
+  placeholder="Search document vault by file, requirement, category, state, or county..."
+  onChange={(e) => setDocumentSearchTerm(e.target.value)}
+/>
           </div>
 
           {vaultRecords.length === 0 &&
@@ -1711,7 +2550,9 @@ function renderDocumentVault() {
             )}
 
           <div style={styles.documentVaultGrid}>
-            {vaultRecords.map((record) => {
+            {vaultRecords
+  .filter((record) => record.document_url)
+  .map((record) => {
               const history = documentHistory[record.id] || [];
               const isHistoryOpen = openHistory[record.id];
 
@@ -1915,6 +2756,109 @@ async function saveSporeTestLog() {
   });
 
   loadData();
+}
+async function saveInspectionChecklist() {
+  if (!authUserId) {
+    setMessage("You must be logged in to save a compliance log.");
+    return;
+  }
+
+  if (!inspectionChecklistForm.entry_date) {
+    setMessage("Please enter the inspection date.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("compliance_log_entries")
+    .insert({
+      auth_user_id: authUserId,
+      log_type_key: "inspection_checklist",
+      entry_date: inspectionChecklistForm.entry_date,
+      fields: {
+        employee_initials:
+          inspectionChecklistForm.employee_initials,
+        licenses_posted:
+          inspectionChecklistForm.licenses_posted,
+        bbp_current:
+          inspectionChecklistForm.bbp_current,
+        consent_forms_available:
+          inspectionChecklistForm.consent_forms_available,
+        aftercare_available:
+          inspectionChecklistForm.aftercare_available,
+        sharps_compliant:
+          inspectionChecklistForm.sharps_compliant,
+        spore_tests_current:
+          inspectionChecklistForm.spore_tests_current,
+        autoclave_records_available:
+          inspectionChecklistForm.autoclave_records_available,
+        biohazard_records_available:
+          inspectionChecklistForm.biohazard_records_available,
+        required_signage_posted:
+          inspectionChecklistForm.required_signage_posted,
+        handwashing_sink_compliant:
+          inspectionChecklistForm.handwashing_sink_compliant,
+      },
+      notes: inspectionChecklistForm.notes,
+    });
+
+  if (error) {
+    setMessage(error.message);
+    return;
+  }
+
+  setMessage("Inspection checklist saved.");
+  setActiveLogKey(null);
+
+  setInspectionChecklistForm({
+    entry_date: "",
+    employee_initials: "",
+    licenses_posted: false,
+    bbp_current: false,
+    consent_forms_available: false,
+    aftercare_available: false,
+    sharps_compliant: false,
+    spore_tests_current: false,
+    autoclave_records_available: false,
+    biohazard_records_available: false,
+    required_signage_posted: false,
+    handwashing_sink_compliant: false,
+    notes: "",
+  });
+
+  await loadData();
+}
+async function archiveComplianceLogEntry(entryId: number) {
+  const { error } = await supabase
+    .from("compliance_log_entries")
+    .update({ archived: true })
+    .eq("id", entryId);
+
+  if (error) {
+    setMessage(error.message);
+    return;
+  }
+
+  setMessage("Compliance log entry archived.");
+  loadData();
+}
+async function restoreComplianceLogEntry(entryId: number) {
+  const { error } = await supabase
+    .from("compliance_log_entries")
+    .update({ archived: false })
+    .eq("id", entryId);
+
+  if (error) {
+    setMessage(error.message);
+    return;
+  }
+
+  setLogEntries((prev) =>
+    prev.map((entry) =>
+      entry.id === entryId ? { ...entry, archived: false } : entry
+    )
+  );
+
+  setMessage("Archived log restored.");
 }
 async function saveAutoclaveLog() {
   if (!authUserId) {
@@ -2160,11 +3104,145 @@ function renderComplianceLogs() {
           <p style={styles.helperText}>
             Logs are operational records for sterilization, testing, inspections, and safety activity. They do not replace required compliance items, permits, licenses, inspections, or uploaded compliance documents.
           </p>
-        </div>
 
-        <span style={styles.sectionCount}>
-          {visibleLogTypes.length}
-        </span>
+<div
+  style={{
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginTop: "12px",
+  }}
+>
+  <div>
+    <label style={styles.inputLabel}>
+      Export Start Date
+    </label>
+
+    <input
+      type="date"
+      style={styles.input}
+      value={logExportStartDate}
+      onChange={(e) =>
+        setLogExportStartDate(e.target.value)
+      }
+    />
+  </div>
+
+  <div>
+    <label style={styles.inputLabel}>
+      Export End Date
+    </label>
+
+    <input
+      type="date"
+      style={styles.input}
+      value={logExportEndDate}
+      onChange={(e) =>
+        setLogExportEndDate(e.target.value)
+      }
+    />
+  </div>
+</div>
+<div
+  style={{
+    display: "flex",
+    alignItems: "flex-end",
+  }}
+>
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => {
+      setLogExportStartDate("");
+      setLogExportEndDate("");
+    }}
+  >
+    Clear Dates
+  </button>
+</div>
+<div
+  style={{
+    display: "flex",
+    alignItems: "flex-end",
+    gap: "8px",
+    flexWrap: "wrap",
+  }}
+>
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => {
+      const today = new Date();
+      const start = new Date();
+      start.setDate(today.getDate() - 30);
+
+      setLogExportStartDate(formatDateForInput(start));
+      setLogExportEndDate(formatDateForInput(today));
+    }}
+  >
+    Last 30 Days
+  </button>
+
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => {
+      const today = new Date();
+      const start = new Date();
+      start.setDate(today.getDate() - 90);
+
+      setLogExportStartDate(formatDateForInput(start));
+      setLogExportEndDate(formatDateForInput(today));
+    }}
+  >
+    Last 90 Days
+  </button>
+
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => {
+      const today = new Date();
+      const start = new Date();
+      start.setFullYear(today.getFullYear() - 1);
+
+      setLogExportStartDate(formatDateForInput(start));
+      setLogExportEndDate(formatDateForInput(today));
+    }}
+  >
+    Last 12 Months
+  </button>
+</div>
+</div>
+
+                <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flexWrap: "wrap",
+          }}
+        >
+<button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={() => exportComplianceLogsCsv()}
+>
+  Export All Logs CSV
+</button>
+
+<button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={() => exportComplianceLogsPdf()}
+>
+  Export All Logs PDF
+</button>
+
+          <span style={styles.sectionCount}>
+            {visibleLogTypes.length}
+          </span>
+        </div>
       </div>
 
       {visibleLogTypes.length === 0 && (
@@ -2217,10 +3295,11 @@ function renderComplianceLogs() {
               >
                 <div>
                   <strong
-                    style={{
-                      fontSize: "16px",
-                    }}
-                  >
+  style={{
+    fontSize: "20px",
+    fontWeight: 700,
+  }}
+>
                     {log.name}
                   </strong>
 
@@ -2228,26 +3307,43 @@ function renderComplianceLogs() {
                     style={{
                       color: "#9CA3AF",
                       marginTop: "6px",
-                      fontSize: "13px",
+                      fontSize: "15px",
+                      lineHeight: "1.5",
                     }}
                   >
                     {log.description}
                   </p>
 
                   <p
-                    style={{
-                      color: "#FC5B00",
-                      marginTop: "8px",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Frequency: {log.frequency}
-                  </p>
+  style={{
+    color: "#FC5B00",
+    marginTop: "8px",
+    fontSize: "14px",
+    fontWeight: 600,
+  }}
+>
+  Frequency:{" "}
+  {log.frequency
+    ?.replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())}
+</p>
                 </div>
-
+<div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: "8px",
+    minWidth: "160px",
+  }}
+>
              <button
   type="button"
-  style={styles.button}
+  style={{
+  ...styles.button,
+  minHeight: "36px",
+  fontSize: "13px",
+}}
   onClick={() => {
 if (
   log.key === "spore_test" ||
@@ -2255,7 +3351,8 @@ if (
   log.key === "sharps_disposal" ||
   log.key === "exposure_incident" ||
   log.key === "sterilization_cycle" ||
-  log.key === "jewelry_sterilization"
+  log.key === "jewelry_sterilization" ||
+  log.key === "inspection_checklist"
 ) {
       setActiveLogKey(
         activeLogKey === log.key ? null : log.key
@@ -2268,20 +3365,59 @@ if (
 >
   {(log.key === "spore_test" ||
   log.key === "autoclave_maintenance" ||
-  log.key === "sharps_disposal") &&
+  log.key === "sharps_disposal" ||
+  log.key === "exposure_incident" ||
+  log.key === "sterilization_cycle" ||
+  log.key === "jewelry_sterilization" ||
+  log.key === "inspection_checklist") &&
 activeLogKey === log.key
   ? "Close Form"
   : "Complete Log"}
 </button>
+
+<button
+  type="button"
+  style={{
+  ...styles.secondaryButton,
+  minHeight: "36px",
+  fontSize: "13px",
+}}
+  onClick={() => exportComplianceLogsCsv(log.key)}
+>
+  Export CSV
+</button>
+
+<button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={() => exportComplianceLogsPdf(log.key)}
+>
+  Export PDF
+</button>
+<button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={() =>
+    setOpenLogHistory(
+      openLogHistory === log.key ? null : log.key
+    )
+  }
+>
+  {openLogHistory === log.key
+    ? "Hide History"
+    : "View History"}
+</button>
+</div>
               </div>
 
               <div
                 style={{
-                  marginTop: "12px",
-                  color: "#bbb",
-                  fontSize: "13px",
-                }}
-              >
+    color: "#FFFFFF",
+    marginTop: "14px",
+    fontSize: "15px",
+    fontWeight: 600,
+  }}
+>
                 Last Entry:{" "}
                 {latestEntry
                   ? latestEntry.entry_date
@@ -2370,6 +3506,71 @@ activeLogKey === log.key
     <button type="button" style={styles.button} onClick={saveSporeTestLog}>
       Save Spore Test
     </button>
+  </div>
+)}
+{log.key === "inspection_checklist" && activeLogKey === "inspection_checklist" && (
+  <div style={styles.inlineActions}>
+    <div style={styles.dateField}>
+      <label style={styles.inputLabel}>Date Checked</label>
+      <input
+        type="date"
+        style={styles.input}
+        value={inspectionChecklistForm.entry_date}
+        onChange={(e) =>
+          setInspectionChecklistForm((prev) => ({
+            ...prev,
+            entry_date: e.target.value,
+          }))
+        }
+      />
+    </div>
+
+    <div style={styles.dateField}>
+      <label style={styles.inputLabel}>Employee Initials</label>
+      <input
+        style={styles.input}
+        value={inspectionChecklistForm.employee_initials}
+        onChange={(e) =>
+          setInspectionChecklistForm((prev) => ({
+            ...prev,
+            employee_initials: e.target.value,
+          }))
+        }
+      />
+    </div>
+
+    <label><input type="checkbox" checked={inspectionChecklistForm.licenses_posted} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, licenses_posted: e.target.checked }))} /> Licenses posted</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.bbp_current} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, bbp_current: e.target.checked }))} /> BBP certificates current</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.consent_forms_available} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, consent_forms_available: e.target.checked }))} /> Consent forms available</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.aftercare_available} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, aftercare_available: e.target.checked }))} /> Aftercare instructions available</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.sharps_compliant} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, sharps_compliant: e.target.checked }))} /> Sharps containers compliant</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.spore_tests_current} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, spore_tests_current: e.target.checked }))} /> Spore tests current</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.autoclave_records_available} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, autoclave_records_available: e.target.checked }))} /> Autoclave records available</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.biohazard_records_available} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, biohazard_records_available: e.target.checked }))} /> Biohazard disposal records available</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.required_signage_posted} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, required_signage_posted: e.target.checked }))} /> Required signage posted</label>
+    <label><input type="checkbox" checked={inspectionChecklistForm.handwashing_sink_compliant} onChange={(e) => setInspectionChecklistForm((prev) => ({ ...prev, handwashing_sink_compliant: e.target.checked }))} /> Handwashing sink compliant</label>
+
+    <div style={styles.dateField}>
+      <label style={styles.inputLabel}>Notes</label>
+      <input
+        style={styles.input}
+        value={inspectionChecklistForm.notes}
+        onChange={(e) =>
+          setInspectionChecklistForm((prev) => ({
+            ...prev,
+            notes: e.target.value,
+          }))
+        }
+      />
+    </div>
+
+    <button
+  type="button"
+  style={styles.button}
+  onClick={saveInspectionChecklist}
+>
+  Save Inspection Checklist
+</button>
   </div>
 )}
 {log.key === "exposure_incident" &&
@@ -2954,7 +4155,11 @@ activeLogKey === log.key
     }}
   >
     {logEntries
-      .filter((entry) => entry.log_type_key === log.key)
+      .filter((entry) => entry.log_type_key === log.key).filter(
+  (entry) =>
+    entry.log_type_key === log.key &&
+    !entry.archived
+)
       .map((entry) => (
         <div
           key={entry.id}
@@ -2967,6 +4172,20 @@ activeLogKey === log.key
           }}
         >
           <strong>{entry.entry_date}</strong>
+
+          <button
+  type="button"
+  style={{
+    ...styles.secondaryButton,
+    marginTop: "10px",
+    marginBottom: "10px",
+    fontSize: "12px",
+    minHeight: "32px",
+  }}
+  onClick={() => archiveComplianceLogEntry(entry.id)}
+>
+  Archive Entry
+</button>
 
           {log.key === "spore_test" && (
             <>
@@ -3123,6 +4342,70 @@ activeLogKey === log.key
     )}
   </>
 )}
+{log.key === "inspection_checklist" && (
+  <>
+    <p style={styles.helperText}>
+      <strong>Employee Initials:</strong>{" "}
+      {entry.fields?.employee_initials || "Not recorded"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Licenses Posted:</strong>{" "}
+      {entry.fields?.licenses_posted ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>BBP Certificates Current:</strong>{" "}
+      {entry.fields?.bbp_current ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Consent Forms Available:</strong>{" "}
+      {entry.fields?.consent_forms_available ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Aftercare Instructions Available:</strong>{" "}
+      {entry.fields?.aftercare_available ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Sharps Containers Compliant:</strong>{" "}
+      {entry.fields?.sharps_compliant ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Spore Tests Current:</strong>{" "}
+      {entry.fields?.spore_tests_current ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Autoclave Records Available:</strong>{" "}
+      {entry.fields?.autoclave_records_available ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Biohazard Disposal Records Available:</strong>{" "}
+      {entry.fields?.biohazard_records_available ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Required Signage Posted:</strong>{" "}
+      {entry.fields?.required_signage_posted ? "Yes" : "No"}
+    </p>
+
+    <p style={styles.helperText}>
+      <strong>Handwashing Sink Compliant:</strong>{" "}
+      {entry.fields?.handwashing_sink_compliant ? "Yes" : "No"}
+    </p>
+
+    {entry.notes && (
+      <p style={styles.helperText}>
+        <strong>Notes:</strong> {entry.notes}
+      </p>
+    )}
+  </>
+)}
 {log.key === "jewelry_sterilization" && (
   <>
     <p style={styles.helperText}>
@@ -3166,21 +4449,6 @@ activeLogKey === log.key
       ))}
   </div>
 )}
-<div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-  <button
-    type="button"
-    style={styles.secondaryButton}
-    onClick={() =>
-      setOpenLogHistory(
-        openLogHistory === log.key ? null : log.key
-      )
-    }
-  >
-    {openLogHistory === log.key
-      ? "Hide History"
-      : "View History"}
-  </button>
-</div>
             </div>
           );
         })}
@@ -3188,6 +4456,196 @@ activeLogKey === log.key
     </section>
   );
 }
+<div style={styles.card}>
+  <h2 style={styles.sectionTitle}>Archived Compliance Logs</h2>
+
+  <p style={styles.helperText}>
+    Archived logs are retained for audit history and can be restored at any time.
+  </p>
+
+  {logEntries.filter((entry) => entry.archived).length === 0 ? (
+    <p style={styles.emptyText}>No archived compliance logs.</p>
+  ) : (
+    logTypes.map((log) => {
+      const archivedEntries = logEntries.filter(
+        (entry) => entry.log_type_key === log.key && entry.archived
+      );
+
+      if (archivedEntries.length === 0) return null;
+
+      return (
+        <div key={`archived-${log.key}`} style={styles.logCard}>
+          <h3 style={styles.logTitle}>{log.name}</h3>
+
+          {archivedEntries.map((entry) => (
+            <div key={entry.id} style={styles.historyItem}>
+              <p>
+                <strong>Date:</strong> {entry.entry_date || "Not recorded"}
+              </p>
+
+              {entry.result && (
+                <p>
+                  <strong>Result:</strong> {entry.result}
+                </p>
+              )}
+
+              {entry.notes && (
+                <p>
+                  <strong>Notes:</strong> {entry.notes}
+                </p>
+              )}
+
+              <button
+                type="button"
+                style={styles.secondaryButton}
+                onClick={() => restoreComplianceLogEntry(entry.id)}
+              >
+                Restore Log
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    })
+  )}
+</div>
+function renderArchivedComplianceLogs() {
+  const archivedLogCount = logEntries.filter((entry) => entry.archived).length;
+
+ return (
+  <section style={styles.card}>
+    <div style={styles.sectionHeader}>
+      <div>
+        <h2 style={styles.sectionTitle}>
+          Archived Compliance Logs
+        </h2>
+
+        <p style={styles.helperText}>
+          Archived logs are retained for audit history and can be restored at any time.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+  <span
+  style={{
+    minWidth: "36px",
+    height: "36px",
+    borderRadius: "999px",
+    background: "#FC5B00",
+    color: "#fff",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    boxShadow: "0 0 24px rgba(252,91,0,0.45)",
+  }}
+>
+  {archivedLogCount}
+</span>
+
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => setArchivedLogsOpen((prev) => !prev)}
+  >
+    {archivedLogsOpen ? "Close Archive" : "Open Archive"}
+  </button>
+</div>
+    </div>
+
+    {archivedLogsOpen && (
+  <>
+ <input
+  type="text"
+  placeholder="Search archived logs..."
+  value={archivedSearch}
+  onChange={(e) =>
+    setArchivedSearch(e.target.value)
+  }
+  style={{
+    ...styles.input,
+    width: "100%",
+    marginBottom: 16,
+  }}
+/>
+
+      {logEntries.filter((entry) => entry.archived).length === 0 ? (
+        <p style={styles.helperText}>
+          No archived compliance logs.
+        </p>
+      ) : (
+        logTypes.map((log) => {
+          const archivedEntries = logEntries.filter(
+            (entry) =>
+              entry.log_type_key === log.key &&
+              entry.archived
+          );
+
+          const filteredArchivedEntries = archivedEntries.filter(
+  (entry) => {
+    const search = archivedSearch.toLowerCase();
+
+    return (
+      log.name.toLowerCase().includes(search) ||
+      entry.result?.toLowerCase().includes(search) ||
+      entry.notes?.toLowerCase().includes(search) ||
+      entry.entry_date?.includes(search)
+    );
+  }
+);
+
+          if (filteredArchivedEntries.length === 0) return null;
+
+          return (
+            <section
+              key={`archived-${log.key}`}
+              style={styles.card}
+            >
+              <h3>{log.name}</h3>
+
+              {filteredArchivedEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  style={styles.historyItem}
+                >
+                  <p style={styles.helperText}>
+                    <strong>Date:</strong>{" "}
+                    {entry.entry_date || "Not recorded"}
+                  </p>
+
+                  <p style={styles.helperText}>
+                    <strong>Result:</strong>{" "}
+                    {entry.result || "Not recorded"}
+                  </p>
+
+                  {entry.notes && (
+                    <p style={styles.helperText}>
+                      <strong>Notes:</strong>{" "}
+                      {entry.notes}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() =>
+                      restoreComplianceLogEntry(entry.id)
+                    }
+                  >
+                    Restore Log
+                  </button>
+                </div>
+              ))}
+            </section>
+          );
+        })
+      )}
+          </>
+  )}
+    </section>
+  );
+}
+
   function renderActivityFeed() {
     return (
       <section style={styles.card}>
@@ -3258,13 +4716,42 @@ activeLogKey === log.key
 
         <section style={styles.completedCard}>
           <div style={styles.sectionHeader}>
-            <div>
-              <p style={styles.eyebrow}>Current</p>
-              <h2 style={styles.sectionTitle}>{title} — Completed Records</h2>
-            </div>
+  <div>
+    <p style={styles.eyebrow}>Current</p>
+    <h2 style={styles.sectionTitle}>
+      {title} — Completed Records
+    </h2>
+  </div>
 
-            <span style={styles.sectionCount}>{sectionCompleted.length}</span>
-          </div>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      flexWrap: "wrap",
+    }}
+  >
+    <button
+      type="button"
+      style={styles.secondaryButton}
+      onClick={() => exportRequirementsPdf()}
+    >
+      Export Requirements PDF
+    </button>
+
+    <button
+  type="button"
+  style={styles.secondaryButton}
+  onClick={() => exportFullComplianceReportPdf()}
+>
+  Export Full Compliance Report
+</button>
+
+    <span style={styles.sectionCount}>
+      {sectionCompleted.length}
+    </span>
+  </div>
+</div>
 
           {sectionCompleted.length === 0 &&
   renderEmptyState(
@@ -3764,6 +5251,7 @@ activeLogKey === log.key
   )}
 </div>
         {renderDocumentVault()}
+        {renderArchivedComplianceLogs()}
       </AllianceGate>
     </main>
   );

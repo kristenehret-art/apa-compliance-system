@@ -585,16 +585,34 @@ async function restoreQuote(quote: Quote) {
                     >
                       Resend Quote
                     </button>
-                                        {quote.deposit_required && !quote.deposit_paid && (
-                      <button
-                        onClick={() => {
-                          alert("Manual deposit reminder API will be connected next.");
-                        }}
-                        style={lightButton}
-                      >
-                        Send Deposit Reminder
-                      </button>
-                    )}
+                                      {quote.deposit_required && !quote.deposit_paid && (
+  <button
+    onClick={async () => {
+      const res = await fetch("/api/send-deposit-reminders", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    quoteSlug: quote.quote_slug,
+  }),
+});
+
+if (!res.ok) {
+  const errorText = await res.text();
+  console.error("DEPOSIT REMINDER ERROR:", errorText);
+  alert("Deposit reminder failed: " + errorText);
+  return;
+}
+
+      alert("Deposit reminder sent.");
+      loadQuotes(true);
+    }}
+    style={lightButton}
+  >
+    Send Deposit Reminder
+  </button>
+)}
 
                     {quote.deposit_required && !quote.deposit_paid && (
                       <button
