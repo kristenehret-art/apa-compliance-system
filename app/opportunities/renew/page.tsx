@@ -1,10 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
-export default function RenewOpportunityPage() {
+function RenewPageContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
@@ -90,5 +91,12 @@ export default function RenewOpportunityPage() {
         )}
       </div>
     </main>
+  );
+}
+export default function RenewPage() {
+  return (
+    <Suspense fallback={null}>
+      <RenewPageContent />
+    </Suspense>
   );
 }
