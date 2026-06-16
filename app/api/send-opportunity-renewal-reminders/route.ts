@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import sgMail from "@sendgrid/mail";
 import { supabase } from "../../../lib/supabase";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+sgMail.setApiKey(process.env.SENDGRID_COMPLIANCE_API_KEY || "");
 
 export async function POST() {
   try {
@@ -34,33 +34,26 @@ export async function POST() {
 
       const renewUrl = `${appUrl}/opportunities/renew?token=${item.renewal_token}`;
 
-      await resend.emails.send({
-        from: "Artist Protection Alliance <onboarding@resend.dev>",
+      await sgMail.send({
+        from: "APA Compliance <noreply@artistprotectionalliance.com>",
         to: item.contact_email,
         subject: "Renew your APA Opportunity Hub listing",
         html: `
           <div style="font-family: Arial, sans-serif; background:#f7f7f7; padding:30px;">
             <div style="max-width:600px; margin:0 auto; background:white; padding:30px; border-radius:14px;">
               <h1 style="margin-top:0;">Your listing is about to expire</h1>
-
               <p>Your APA Opportunity Hub listing is scheduled to expire soon:</p>
-
               <p><strong>${item.title}</strong></p>
-
               <p>If this opportunity is still open, you can renew it for another 30 days.</p>
-
               <p style="margin:30px 0;">
                 <a href="${renewUrl}" style="background:#111; color:white; padding:14px 22px; border-radius:10px; text-decoration:none; font-weight:bold;">
                   Renew Listing
                 </a>
               </p>
-
               <p style="color:#666; font-size:14px;">
                 If the position has been filled, no action is needed. The listing will expire automatically.
               </p>
-
               <hr style="border:none; border-top:1px solid #ddd; margin:25px 0;" />
-
               <p style="color:#777; font-size:13px;">
                 Powered by Artist Protection Alliance
               </p>
