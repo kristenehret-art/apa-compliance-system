@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AllianceGate from "@/components/AllianceGate";
 
@@ -260,7 +261,8 @@ function getDisplayRequirementCategory(record: UserComplianceRecord) {
 }
 
 export default function ComplianceDashboard() {
-  const supabase = createClient();
+  const router = useRouter();
+const supabase = createClient();
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [records, setRecords] = useState<UserComplianceRecord[]>([]);
   const [stateOptions, setStateOptions] = useState<StateOption[]>([]);
@@ -378,6 +380,21 @@ const COMPLIANCE_COUNTY_KEY = "apa_compliance_county";
 
 const userId = 1;
 const [authUserId, setAuthUserId] = useState<string | null>(null);
+
+useEffect(() => {
+  async function checkAuth() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/login");
+    }
+  }
+
+  checkAuth();
+}, [router, supabase]);
+
 function exportComplianceLogsCsv(logKey?: string) {
 const logsToExport = logEntries.filter((entry) => {
   if (logKey && entry.log_type_key !== logKey) return false;

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { supabase } from "../../lib/supabase";
 
@@ -68,6 +69,7 @@ function getComplianceLabel(summary?: ComplianceSummary) {
 }
 
 export default function ArtistsPage() {
+  const router = useRouter();
   const [artists, setArtists] = useState<ArtistProfile[]>([]);
   const [complianceSummaries, setComplianceSummaries] = useState<
     Record<string, ComplianceSummary>
@@ -76,6 +78,20 @@ export default function ArtistsPage() {
 
   const [stateFilter, setStateFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+  async function checkAuth() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/login");
+    }
+  }
+
+  checkAuth();
+}, [router]);
 
   useEffect(() => {
     fetchArtists();
