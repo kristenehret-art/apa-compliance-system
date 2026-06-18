@@ -91,7 +91,7 @@ export default function ArtistsPage() {
   }
 
   checkAuth();
-}, [router]);
+}, [router, supabase]);
 
   useEffect(() => {
     fetchArtists();
