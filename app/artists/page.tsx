@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
-import { supabase } from "../../lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 
 type ArtistProfile = {
   id: string;
@@ -70,6 +70,7 @@ function getComplianceLabel(summary?: ComplianceSummary) {
 
 export default function ArtistsPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [artists, setArtists] = useState<ArtistProfile[]>([]);
   const [complianceSummaries, setComplianceSummaries] = useState<
     Record<string, ComplianceSummary>
