@@ -14,7 +14,7 @@ export default function PostArtistProfilePage() {
     state: "",
     tattoo_styles: "",
     years_experience: "",
-    looking_for: "Seeking Shop Position",
+    looking_for: "Tattoo Artist Position",
     willing_to_travel: "Local only",
     instagram_url: "",
     portfolio_url: "",

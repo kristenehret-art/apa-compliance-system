@@ -614,11 +614,11 @@ async function updateArtistProfileStatus(id: string | number, status: string) {
   <strong
     style={{
       color:
-        artist.status === "approved"
+        String(artist.status).trim().toLowerCase() === "approved"
           ? "#4caf50"
-          : artist.status === "rejected"
+          : String(artist.status).trim().toLowerCase() === "rejected"
           ? "#e53935"
-          : artist.status === "hidden"
+          : String(artist.status).trim().toLowerCase() === "hidden"
           ? "#999"
           : "#ff8a3d",
     }}
@@ -626,7 +626,6 @@ async function updateArtistProfileStatus(id: string | number, status: string) {
     {artist.status}
   </strong>
 </p>
-
                   <p style={mutedTextStyle}>
                     Compliance Badge Visible:{" "}
                     <strong>

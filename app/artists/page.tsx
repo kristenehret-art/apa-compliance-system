@@ -285,8 +285,8 @@ export default function ArtistsPage() {
 
                   <div style={pillRowStyle}>
                     {artist.willing_to_travel && (
-                      <span style={pillStyle}>TRAVEL READY</span>
-                    )}
+  <span style={pillStyle}>{artist.willing_to_travel}</span>
+)}
 
                     {artist.looking_for && (
                       <span style={pillStyle}>OPEN TO OPPORTUNITIES</span>
