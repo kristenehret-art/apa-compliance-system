@@ -182,20 +182,28 @@ async function saveComplianceAuditNotes(id: number) {
     fetchData();
   }
 
-  async function updateArtistProfileStatus(id: string, status: string) {
-    const { error } = await supabase
-      .from("artist_profiles")
-      .update({ status })
-      .eq("id", id);
+async function updateArtistProfileStatus(id: string | number, status: string) {
+  const { data, error } = await supabase
+    .from("artist_profiles")
+    .update({ status })
+    .eq("id", id)
+    .select();
 
-    if (error) {
-      alert("Open to Work status update failed: " + error.message);
-      return;
-    }
-
-    alert(`Open to Work profile marked as ${status}.`);
-    fetchData();
+  if (error) {
+    alert("Open to Work status update failed: " + error.message);
+    console.error(error);
+    return;
   }
+
+  if (!data || data.length === 0) {
+    alert("Open to Work update did not change any rows. Check profile ID.");
+    console.error("No artist profile row updated for id:", id);
+    return;
+  }
+
+  alert(`Open to Work profile marked as ${status}.`);
+  fetchData();
+}
 
   async function renewListing(id: string) {
     const { error } = await supabase
@@ -602,8 +610,22 @@ async function saveComplianceAuditNotes(id: number) {
                   )}
 
                   <p style={mutedTextStyle}>
-                    Status: <strong>{artist.status}</strong>
-                  </p>
+  Status:{" "}
+  <strong
+    style={{
+      color:
+        artist.status === "approved"
+          ? "#4caf50"
+          : artist.status === "rejected"
+          ? "#e53935"
+          : artist.status === "hidden"
+          ? "#999"
+          : "#ff8a3d",
+    }}
+  >
+    {artist.status}
+  </strong>
+</p>
 
                   <p style={mutedTextStyle}>
                     Compliance Badge Visible:{" "}
