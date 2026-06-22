@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import sgMail from "@sendgrid/mail";
 import { supabase } from "../../../lib/supabase";
 
-sgMail.setApiKey(process.env.SENDGRID_COMPLIANCE_API_KEY!);
+sgMail.setApiKey(process.env.SENDGRID_QUOTES_API_KEY!);
 
 export async function POST(request: Request) {
   try {
@@ -67,9 +67,30 @@ export async function POST(request: Request) {
 
             <p><strong>Name:</strong> ${applicantName}</p>
             <p><strong>Email:</strong> ${applicantEmail}</p>
-            <p><strong>Phone:</strong> ${applicantPhone || "Not provided"}</p>
-            <p><strong>Instagram:</strong> ${applicantInstagram || "Not provided"}</p>
-            <p><strong>Portfolio:</strong> ${applicantPortfolio || "Not provided"}</p>
+            <p>
+  <strong>Phone:</strong>
+  ${
+    applicantPhone
+      ? `<a href="tel:${applicantPhone}">${applicantPhone}</a>`
+      : "Not provided"
+  }
+</p>
+  <strong>Instagram:</strong>
+  ${
+    applicantInstagram
+      ? `<a href="${applicantInstagram}" target="_blank">${applicantInstagram}</a>`
+      : "Not provided"
+  }
+</p>
+
+<p>
+  <strong>Portfolio:</strong>
+  ${
+    applicantPortfolio
+      ? `<a href="${applicantPortfolio}" target="_blank">${applicantPortfolio}</a>`
+      : "Not provided"
+  }
+</p>
 
             <p><strong>Message:</strong></p>
             <p style="line-height:1.6;">${message}</p>
