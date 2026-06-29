@@ -809,6 +809,74 @@ useEffect(() => {
     setHourlyRate(suggestedHourlyRate);
   }, [city]);
 
+  useEffect(() => {
+  async function loadShopSettings() {
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) return;
+
+      const { data, error } = await supabase
+        .from("shop_settings")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("SHOP SETTINGS LOAD ERROR:", error);
+        return;
+      }
+
+      if (!data) return;
+
+setShopName(data.shop_name || "");
+setArtistName(data.artist_name || "");
+setArtistContact(data.artist_contact || "");
+setShopEmail(data.shop_email || "");
+setSendShopCopy(Boolean(data.send_shop_copy));
+
+setState(data.state || "AZ");
+setCity(data.city || "Statewide Average");
+setPricingMode(data.pricing_mode || "hourly");
+setHourlyRate(Number(data.hourly_rate) || stateHourlyRates.AZ);
+setPiecePrice(Number(data.piece_price) || 300);
+setMaterials(Number(data.materials) || 25);
+
+setOperatingModel(data.operating_model || "independent");
+setBoothRent(Number(data.booth_rent) || 40);
+setArtistPercentage(Number(data.artist_percentage) || 70);
+setShopPercentage(Number(data.shop_percentage) || 30);
+setBoothRentFrequency(data.booth_rent_frequency || "per_appointment");
+setWeeklyBoothRent(Number(data.weekly_booth_rent) || 0);
+setMonthlyBoothRent(Number(data.monthly_booth_rent) || 0);
+setAppointmentsPerWeek(Number(data.appointments_per_week) || 0);
+setAppointmentsPerMonth(Number(data.appointments_per_month) || 0);
+setBuildExpensesIntoQuote(Boolean(data.build_expenses_into_quote));
+
+setTaxRate(Number(data.tax_rate) || stateTaxRates.AZ);
+setApplyTax(Boolean(data.apply_tax));
+
+setBookingInstructions(data.booking_instructions || "");
+setBookingLink(data.booking_link || "");
+
+setDepositRequired(Boolean(data.deposit_required));
+setDepositPercent(Number(data.deposit_percent) || 20);
+setPaymentInstructions(data.payment_instructions || "");
+setDepositDueHours(Number(data.deposit_due_hours) || 24);
+
+setApplyDiscount(Boolean(data.apply_discount));
+setDiscount(Number(data.discount) || 0);
+    } catch (error) {
+      console.error("SHOP SETTINGS LOAD ERROR:", error);
+    }
+  }
+
+  loadShopSettings();
+}, []);
+
   function applyPreset(type: "small" | "medium" | "large" | "fullDay") {
     
     if (professionType === "piercer") {
@@ -902,28 +970,63 @@ useEffect(() => {
     return true;
   }
 
-  async function saveSettings() {
-    const { error } = await supabase.from("shop_settings").upsert(
-      {
-        user_id: "demo-user",
-        shop_name: shopName,
-        shop_email: shopEmail,
-        send_shop_copy: sendShopCopy,
-        hourly_rate: hourlyRate,
-        tax_rate: taxRate,
-        apply_tax: applyTax,
-      },
-      { onConflict: "user_id" }
-    );
+async function saveSettings() {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-    if (error) {
-      alert("Settings did not save.");
-      console.error(error);
-      return;
-    }
-
-    alert("Settings saved!");
+  if (userError || !user) {
+    alert("You must be logged in to save settings.");
+    return;
   }
+
+  const { error } = await supabase.from("shop_settings").upsert(
+    {
+      user_id: user.id,
+      shop_name: shopName,
+      artist_name: artistName,
+      artist_contact: artistContact,
+      shop_email: shopEmail,
+      send_shop_copy: sendShopCopy,
+      state,
+      city,
+      pricing_mode: pricingMode,
+      hourly_rate: hourlyRate,
+      piece_price: piecePrice,
+      materials,
+      operating_model: operatingModel,
+      booth_rent: boothRent,
+      artist_percentage: artistPercentage,
+      shop_percentage: shopPercentage,
+      booth_rent_frequency: boothRentFrequency,
+      weekly_booth_rent: weeklyBoothRent,
+      monthly_booth_rent: monthlyBoothRent,
+      appointments_per_week: appointmentsPerWeek,
+      appointments_per_month: appointmentsPerMonth,
+      build_expenses_into_quote: buildExpensesIntoQuote,
+      apply_tax: applyTax,
+      tax_rate: taxRate,
+      booking_instructions: bookingInstructions,
+      booking_link: bookingLink,
+      deposit_required: depositRequired,
+      deposit_percent: depositPercent,
+      payment_instructions: paymentInstructions,
+      deposit_due_hours: depositDueHours,
+      apply_discount: applyDiscount,
+      discount,
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) {
+    alert(`Settings did not save: ${error.message}`);
+    console.error("SHOP SETTINGS SAVE ERROR:", error);
+    return;
+  }
+
+  alert("Settings saved!");
+}
 
   async function saveQuote() {
     if (!validateQuote()) return;
@@ -1960,19 +2063,6 @@ When enabled, expenses are built into the client quote so your pricing reflects 
       {isCreatingQuoteLink
         ? "Creating Quote..."
        : "Create Shareable Quote"}
-    </button>
-
-    <button
-      onClick={saveQuote}
-      style={{
-        ...darkButtonStyle,
-        padding: "18px",
-        borderRadius: 16,
-        background: "#161616",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
-    >
-      Save Draft
     </button>
 
     <button

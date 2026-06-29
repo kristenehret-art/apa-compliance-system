@@ -282,6 +282,7 @@ const supabase = createClient();
   const [completionDates, setCompletionDates] = useState<Record<number, string>>(
     {}
   );
+const [reminderDates, setReminderDates] = useState<Record<string, string>>({});  
 const [searchTerm, setSearchTerm] = useState("");
 const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 const [categoryFilter, setCategoryFilter] = useState("all");
@@ -383,65 +384,160 @@ const [authUserId, setAuthUserId] = useState<string | null>(null);
 
 useEffect(() => {
   async function checkAuth() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (error || !data.user) {
       router.replace("/login");
+      return;
     }
+
+    setAuthUserId(data.user.id);
   }
 
   checkAuth();
 }, [router, supabase]);
 
+useEffect(() => {
+  if (!authUserId) return;
+
+  hydrateProfile();
+  loadLocationOptions();
+  loadSharingPreference();
+}, [authUserId]);
+
 function exportComplianceLogsCsv(logKey?: string) {
-const logsToExport = logEntries.filter((entry) => {
-  if (logKey && entry.log_type_key !== logKey) return false;
+  const logsToExport = logEntries.filter((entry) => {
+    if (logKey && entry.log_type_key !== logKey) return false;
 
-  if (logExportStartDate && entry.entry_date < logExportStartDate) {
-    return false;
+    if (logExportStartDate && entry.entry_date < logExportStartDate) {
+      return false;
+    }
+
+    if (logExportEndDate && entry.entry_date > logExportEndDate) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!logsToExport.length) {
+    alert("No compliance log entries match this export date range.");
+    setMessage("No compliance log entries match this export date range.");
+    return;
   }
 
-  if (logExportEndDate && entry.entry_date > logExportEndDate) {
-    return false;
+  function fieldValue(entry: ComplianceLogEntry, key: string) {
+    const fields = entry.fields || {};
+    return fields[key] || "";
   }
 
-  return true;
-});
-
-if (!logsToExport.length) {
-  alert("No compliance log entries match this export date range.");
-  setMessage("No compliance log entries match this export date range.");
-  return;
-} 
-
-  const rows = logsToExport.map((entry) => {
+  const baseRow = (entry: ComplianceLogEntry) => {
     const logType = logTypes.find((log) => log.key === entry.log_type_key);
 
     return {
       "Log Type": logType?.name || entry.log_type_key,
       "Entry Date": entry.entry_date,
-      Result: entry.result || "",
+      Result: entry.result || fieldValue(entry, "indicator_result") || "",
       Notes: entry.notes || "",
-      "Machine ID": entry.machine_id || "",
-      "Service Performed": entry.service_performed || "",
-      "Technician / Vendor": entry.technician_vendor || "",
-      Fields: entry.fields
-  ? Object.entries(entry.fields)
-      .map(([key, value]) => {
-        const label = key
-          .replaceAll("_", " ")
-          .replace(/\b\w/g, (char) => char.toUpperCase());
+    };
+  };
 
-        return `${label}: ${value ?? ""}`;
-      })
-      .join(" | ")
-  : "",
+  const rows = logsToExport.map((entry) => {
+    if (entry.log_type_key === "spore_test") {
+      return {
+        ...baseRow(entry),
+        "Lab / Incubator": fieldValue(entry, "lab_or_incubator"),
+        "Lot Number": fieldValue(entry, "lot_number"),
+      };
+    }
+
+    if (entry.log_type_key === "autoclave_maintenance") {
+      return {
+        ...baseRow(entry),
+        "Machine ID": fieldValue(entry, "machine_id"),
+        "Service Performed": fieldValue(entry, "service_performed"),
+        "Technician / Vendor": fieldValue(entry, "technician_vendor"),
+      };
+    }
+
+    if (entry.log_type_key === "sharps_disposal") {
+      return {
+        ...baseRow(entry),
+        "Provider Name": fieldValue(entry, "provider_name"),
+        "Container Count": fieldValue(entry, "container_count"),
+        "Manifest Number": fieldValue(entry, "manifest_number"),
+      };
+    }
+
+    if (entry.log_type_key === "sterilization_cycle") {
+      return {
+        ...baseRow(entry),
+        "Machine ID": fieldValue(entry, "machine_id"),
+        "Cycle Number": fieldValue(entry, "cycle_number"),
+        "Cycle Temp": fieldValue(entry, "cycle_temp"),
+        "Cycle Duration": fieldValue(entry, "cycle_duration"),
+        "Indicator Result": fieldValue(entry, "indicator_result"),
+      };
+    }
+
+    if (entry.log_type_key === "jewelry_sterilization") {
+      return {
+        ...baseRow(entry),
+        "Batch ID": fieldValue(entry, "batch_id"),
+        Method: fieldValue(entry, "method"),
+        "Indicator Result": fieldValue(entry, "indicator_result"),
+      };
+    }
+
+    if (entry.log_type_key === "exposure_incident") {
+      return {
+        ...baseRow(entry),
+        "Incident Type": fieldValue(entry, "incident_type"),
+        "Individuals Involved": fieldValue(entry, "individuals_involved"),
+        "Immediate Actions": fieldValue(entry, "immediate_actions"),
+        "Medical Follow Up Required": fieldValue(
+          entry,
+          "medical_follow_up_required"
+        ),
+      };
+    }
+
+    if (entry.log_type_key === "inspection_checklist") {
+      return {
+        ...baseRow(entry),
+        "Checklist Fields": entry.fields
+          ? Object.entries(entry.fields)
+              .map(([key, value]) => {
+                const label = key
+                  .replaceAll("_", " ")
+                  .replace(/\b\w/g, (char) => char.toUpperCase());
+
+                return `${label}: ${value ?? ""}`;
+              })
+              .join(" | ")
+          : "",
+      };
+    }
+
+    return {
+      ...baseRow(entry),
+      Fields: entry.fields
+        ? Object.entries(entry.fields)
+            .map(([key, value]) => {
+              const label = key
+                .replaceAll("_", " ")
+                .replace(/\b\w/g, (char) => char.toUpperCase());
+
+              return `${label}: ${value ?? ""}`;
+            })
+            .join(" | ")
+        : "",
     };
   });
 
-  const fileLabel = logKey ? logKey.replaceAll("_", "-") : "all-compliance-logs";
+  const fileLabel = logKey
+    ? logKey.replaceAll("_", "-")
+    : "all-compliance-logs";
 
   downloadCsv(`apa-${fileLabel}-export.csv`, rows);
   setMessage("Compliance log CSV export downloaded.");
@@ -681,10 +777,27 @@ const summaryHtml = groupedLogs
   setMessage("Compliance audit PDF report opened.");
 }
 useEffect(() => {
+  async function checkAuth() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+      router.replace("/login");
+      return;
+    }
+
+    setAuthUserId(data.user.id);
+  }
+
+  checkAuth();
+}, [router, supabase]);
+
+useEffect(() => {
+  if (!authUserId) return;
+
   hydrateProfile();
   loadLocationOptions();
   loadSharingPreference();
-}, []);
+}, [authUserId]);
 
 function exportRequirementsPdf() {
   const recordsToExport = visibleRequirementRecords;
@@ -1151,13 +1264,19 @@ setReportDisplayName(user.email || "Compliance User");
 
 setReportDisplayName(resolvedReportName);
 
-    if (
-      profile?.profession_type === "piercer" ||
-      profile?.profession_type === "shop" ||
-      profile?.profession_type === "tattoo_artist"
-    ) {
-      setProfessionType(profile.profession_type);
-    }
+if (
+  profile?.profession_type === "piercer" ||
+  profile?.profession_type === "shop" ||
+  profile?.profession_type === "tattoo_artist"
+) {
+  setProfessionType(profile.profession_type);
+
+  if (profile.profession_type === "shop") {
+    setViewMode("shop");
+  } else {
+    setViewMode("artist");
+  }
+}
 if (
   profile?.membership_tier === "alliance" ||
   profile?.membership_tier === "admin"
@@ -1285,27 +1404,26 @@ async function toggleShareComplianceStatus() {
     setMessage("");
   }
 
-  async function loadCountiesForState(selectedState: string) {
-    const { data, error } = await supabase
-      .from("compliance_items")
-      .select("county")
-      .eq("active", true)
-      .eq("state", selectedState)
-      .not("county", "is", null)
-      .order("county");
+async function loadCountiesForState(selectedState: string) {
+  const { data, error } = await supabase
+    .from("compliance_items")
+    .select("county")
+    .eq("state", selectedState)
+    .not("county", "is", null)
+    .order("county");
 
-    if (error) {
-      setMessage(error.message);
-      return [];
-    }
-
-    const uniqueCounties = Array.from(
-      new Set((data || []).map((row) => row.county).filter(Boolean))
-    ) as string[];
-
-    setCountyOptions(uniqueCounties);
-    return uniqueCounties;
+  if (error) {
+    setMessage(error.message);
+    return [];
   }
+
+  const uniqueCounties = Array.from(
+    new Set((data || []).map((row) => row.county).filter(Boolean))
+  ) as string[];
+
+  setCountyOptions(uniqueCounties);
+  return uniqueCounties;
+}
 
   async function loadData() {
     if (!state) return;
@@ -1694,6 +1812,7 @@ const { error } = await supabase.rpc(
     return {};
   }
 
+
   function getRequirementOwner(record: UserComplianceRecord) {
     return record.compliance_items?.requirement_owner || "artist";
   }
@@ -1707,21 +1826,11 @@ const { error } = await supabase.rpc(
     return owner === viewMode;
   }
 
-function recordMatchesProfession(
-  record: UserComplianceRecord
-) {
-  const professionTypes =
-    record.compliance_items?.profession_types;
+function recordMatchesProfession(record: UserComplianceRecord) {
+  const professionTypes = record.compliance_items?.profession_types;
 
-  if (
-    !professionTypes ||
-    professionTypes.length === 0
-  ) {
-    return true;
-  }
-
-  if (professionType === "shop") {
-    return true;
+  if (!Array.isArray(professionTypes) || professionTypes.length === 0) {
+    return false;
   }
 
   return professionTypes.includes(professionType);
@@ -1987,40 +2096,43 @@ function isCountyPlaceholderRequirement(record: UserComplianceRecord) {
 
 
 function isComplianceLogRequirement(record: UserComplianceRecord) {
-  const name = getDisplayRequirementName(record).toLowerCase();
-  const category = getDisplayRequirementCategory(record).toLowerCase();
-  const description = (record.compliance_items?.description || "").toLowerCase();
+  const name = getDisplayRequirementName(record).trim().toLowerCase();
+  const category = getDisplayRequirementCategory(record).trim().toLowerCase();
 
-  const combined = `${name} ${category} ${description}`;
+  const exactLogNames = [
+    "inspection readiness checklist",
+    "spore test log",
+    "sterilization cycle log",
+    "autoclave maintenance log",
+    "sharps disposal log",
+    "exposure incident log",
+    "jewelry sterilization log",
+  ];
 
-if (
-  combined.includes("bloodborne pathogens") ||
-  combined.includes("bloodborne pathogen") ||
-  combined.includes("blood borne") ||
-  combined.includes("bbp")
-) {
+  if (category === "compliance log" || category === "compliance logs") {
+    return true;
+  }
+
+  return exactLogNames.includes(name);
+}
+
+  function shouldHideForCurrentProfession(record: UserComplianceRecord) {
+  const name = getDisplayRequirementName(record).trim().toLowerCase();
+
+  if (record.location_state === "NY" && professionType === "tattoo_artist") {
+    if (record.compliance_item_id === 202) return true;
+    if (record.compliance_item_id === 222) return true;
+    if (name.includes("minor consent")) return true;
+  }
+
+  if (record.location_state === "NY" && professionType === "piercer") {
+    if (record.compliance_item_id === 201) return true;
+    if (name.includes("minor tattoo restriction")) return true;
+  }
+
   return false;
 }
 
-  const logRequirementKeywords = [
-    "spore test",
-    "biological monitoring",
-    "autoclave",
-    "sterilization cycle",
-    "sterilization log",
-    "jewelry sterilization",
-    "sharps disposal",
-    "exposure incident",
-    "incident log",
-    "inspection readiness",
-    "inspection checklist",
-    "inspection readiness checklist",
-  ];
-
-  return logRequirementKeywords.some((keyword) =>
-    combined.includes(keyword)
-  );
-}
   function recordMatchesFilters(record: UserComplianceRecord) {
     const status = getStatus(record.expires_date);
     const displayName = getDisplayRequirementName(record);
@@ -2060,12 +2172,15 @@ const activeRecords = dedupeRecords(records).filter(
   (record) =>
     shouldShowForViewMode(record) &&
     recordMatchesProfession(record) &&
+    !shouldHideForCurrentProfession(record) &&
     !record.is_inapplicable
 );
 
 const excludedRecords = dedupeRecords(records).filter(
   (record) =>
     shouldShowForViewMode(record) &&
+    recordMatchesProfession(record) &&
+    !shouldHideForCurrentProfession(record) &&
     record.is_inapplicable
 );
 
@@ -2080,6 +2195,8 @@ const visibleLogTypes = logTypes.filter((log) => shouldShowLogType(log));
 const visibleRequirementRecords = applyRequirementRecordOverrides(
   visibleRecords.filter(
     (record) =>
+      recordMatchesProfession(record) &&
+      !shouldHideForCurrentProfession(record) &&
       !isComplianceLogRequirement(record) &&
       !isCountyPlaceholderRequirement(record)
   )
@@ -2097,28 +2214,34 @@ const visibleRequirementRecords = applyRequirementRecordOverrides(
     return categories;
   }, [visibleRecords]);
 
-  const artistRecords = visibleRequirementRecords.filter((r) => {
-    const owner = getRequirementOwner(r);
-    return owner === "artist" || owner === "both";
-  });
+const artistRecords = visibleRequirementRecords.filter((r) => {
+  const owner = getRequirementOwner(r);
+  return owner === "artist" || owner === "both";
+});
 
-  const shopRecords = visibleRequirementRecords.filter((r) => {
-    const owner = getRequirementOwner(r);
-    return owner === "shop" || owner === "both";
-  });
+const shopRecords = visibleRequirementRecords.filter((r) => {
+  const owner = getRequirementOwner(r);
+  return owner === "shop" || owner === "both";
+});
 
-  const notStarted = visibleRecords.filter(
-    (r) => getStatus(r.expires_date) === "Not Started"
-  );
-  const active = visibleRecords.filter(
-    (r) => getStatus(r.expires_date) === "Active"
-  );
-  const expiring = visibleRecords.filter(
-    (r) => getStatus(r.expires_date) === "Expiring Soon"
-  );
-  const expired = visibleRecords.filter(
-    (r) => getStatus(r.expires_date) === "Expired"
-  );
+const currentRequirementRecords =
+  professionType === "shop" ? shopRecords : artistRecords;
+
+const notStarted = currentRequirementRecords.filter(
+  (r) => getStatus(r.expires_date) === "Not Started"
+);
+
+const active = currentRequirementRecords.filter(
+  (r) => getStatus(r.expires_date) === "Active"
+);
+
+const expiring = currentRequirementRecords.filter(
+  (r) => getStatus(r.expires_date) === "Expiring Soon"
+);
+
+const expired = currentRequirementRecords.filter(
+  (r) => getStatus(r.expires_date) === "Expired"
+);
 
   function getNeedsAction(list: UserComplianceRecord[]) {
     return [...list]
@@ -2136,15 +2259,11 @@ const visibleRequirementRecords = applyRequirementRecordOverrides(
       });
   }
 
-const applicableRecords = visibleRequirementRecords.filter(
-  shouldCountTowardComplianceScore
-);
-
-const completedCount = applicableRecords.filter(
+const completedCount = currentRequirementRecords.filter(
   (r) => r.completed_date && r.expires_date
 ).length;
 
-const totalCount = applicableRecords.length;
+const totalCount = currentRequirementRecords.length;
   const progressPercent =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
 
@@ -2399,11 +2518,10 @@ const activityFeed = useMemo(() => {
           <div style={styles.compactDocumentBox}>
             <div>
               <strong>Document</strong>
-              <p style={styles.documentMeta}>
-                {record.document_name
-                  ? `Current file: ${record.document_name}`
-                  : "No current document uploaded"}
-              </p>
+            <p style={styles.documentMeta}>
+  File on record:{" "}
+  {record.document_name || "No document uploaded"}
+</p>
             </div>
 
             <div style={styles.documentActions}>
@@ -2605,88 +2723,42 @@ function renderDocumentVault() {
                   </div>
 
                   <div style={styles.documentActions}>
-                    {record.document_url && (
-                      <button
-                        type="button"
-                        style={styles.secondaryButton}
-                        onClick={() => viewDocument(record)}
-                      >
-                        View Current
-                      </button>
-                    )}
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={() => toggleDocumentHistory(record)}
+  >
+    {isHistoryOpen ? "Hide History" : "View History"}
+  </button>
 
-                    {record.document_url && (
-                      <button
-                        type="button"
-                        style={styles.secondaryButton}
-                        onClick={() =>
-                          archiveAndClearCurrentDocument(record)
-                        }
-                      >
-                        Archive Current
-                      </button>
-                    )}
+  <button
+    type="button"
+    style={styles.secondaryButton}
+    onClick={async () => {
+      const { error } = await supabase
+        .from("user_compliance_items")
+        .update({
+          is_inapplicable: !record.is_inapplicable,
+        })
+        .eq("id", record.id);
 
-                    <label style={styles.uploadButton}>
-                      {record.document_name
-                        ? "Replace Document"
-                        : "Upload Document"}
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
 
-                      <input
-                        type="file"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
+      setMessage(
+        !record.is_inapplicable
+          ? "Item moved to Excluded / N/A Items."
+          : "Item restored."
+      );
 
-                          if (file) {
-                            uploadDocument(record, file);
-                          }
-
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                    </label>
-
-                    <button
-  type="button"
-  style={styles.secondaryButton}
-  onClick={() => toggleDocumentHistory(record)}
->
-  {isHistoryOpen
-    ? "Hide History"
-    : "View History"}
-</button>
-
-<button
-  type="button"
-  style={styles.secondaryButton}
-  onClick={async () => {
-    const { error } = await supabase
-      .from("user_compliance_items")
-      .update({
-        is_inapplicable: !record.is_inapplicable,
-      })
-      .eq("id", record.id);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setMessage(
-  !record.is_inapplicable
-    ? "Item moved to Excluded / N/A Items."
-    : "Item restored."
-);
-
-loadData();
-  }}
->
-  {record.is_inapplicable
-    ? "Marked N/A"
-    : "Mark N/A"}
-</button>
-                  </div>
+      loadData();
+    }}
+  >
+    {record.is_inapplicable ? "Marked N/A" : "Mark N/A"}
+  </button>
+</div>
 
                   {isHistoryOpen && (
                     <div style={styles.historyBox}>
@@ -4731,13 +4803,27 @@ function renderArchivedComplianceLogs() {
           {sectionNeedsAction.map((record) => renderRecord(record, true))}
                 </section>
 
-        <section style={styles.completedCard}>
+        <section
+  style={{
+    ...styles.completedCard,
+    background: "#102218",
+    border: "2px solid #39b54a",
+    boxShadow: "0 0 24px rgba(57, 181, 74, 0.22)",
+  }}
+>
           <div style={styles.sectionHeader}>
   <div>
-    <p style={styles.eyebrow}>Current</p>
-    <h2 style={styles.sectionTitle}>
-      {title} — Completed Records
-    </h2>
+ <p style={{ ...styles.eyebrow, color: "#52d273" }}>
+  Compliant
+</p>
+
+<h2 style={{ ...styles.sectionTitle, color: "#ffffff" }}>
+  ✓ {title} — Completed Records
+</h2>
+
+<p style={{ color: "#9fd8ad", marginTop: "6px", fontSize: "14px" }}>
+  Everything below is currently compliant.
+</p>
   </div>
 
   <div
@@ -4922,51 +5008,28 @@ function renderArchivedComplianceLogs() {
           </select>
         </div>
 
-        <div style={styles.viewModeBox}>
-          <div>
-            <strong>Viewing requirements as:</strong>
-            <p style={styles.helperText}>
-  Artist view is for individual artists, including tattoo artists
-  and piercers. Shop view includes studio-level records like permits,
-  sharps disposal, sterilization logs, and facility compliance.
-</p>
-          </div>
+ <div style={styles.viewModeBox}>
+  <div>
+    <strong>Compliance view</strong>
 
-          <div style={styles.segmentedControl}>
-            <button
-              type="button"
-              style={{
-                ...styles.segmentButton,
-                ...(viewMode === "artist" ? styles.segmentButtonActive : {}),
-              }}
-              onClick={() => setViewMode("artist")}
-            >
-              Artist
-            </button>
+    <p style={styles.helperText}>
+      Requirements are based on the profession selected in your Account settings.
+      To change between tattoo artist, piercer, or shop view, update your
+      profession on the Account page.
+    </p>
 
-            <button
-              type="button"
-              style={{
-                ...styles.segmentButton,
-                ...(viewMode === "shop" ? styles.segmentButtonActive : {}),
-              }}
-              onClick={() => setViewMode("shop")}
-            >
-              Shop
-            </button>
-
-            <button
-              type="button"
-              style={{
-                ...styles.segmentButton,
-                ...(viewMode === "both" ? styles.segmentButtonActive : {}),
-              }}
-              onClick={() => setViewMode("both")}
-            >
-              Both
-            </button>
-          </div>
-        </div>
+    <a
+      href="/account"
+      style={{
+        color: "#ff8a3d",
+        fontWeight: 700,
+        textDecoration: "none",
+      }}
+    >
+      Update profession in Account
+    </a>
+  </div>
+</div>
 
         <div style={styles.shareBox}>
         
@@ -5051,91 +5114,51 @@ function renderArchivedComplianceLogs() {
         </section>
       )}
 
-      <div
-  style={{
-    marginBottom: "20px",
-    padding: "16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,138,61,0.35)",
-    background: "rgba(255,138,61,0.08)",
-  }}
->
+
+     <>
   <div
     style={{
-      color: "#ff8a3d",
-      fontWeight: 700,
-      marginBottom: "8px",
+      marginBottom: "20px",
+      padding: "16px",
+      borderRadius: "12px",
+      border: "1px solid rgba(255,138,61,0.35)",
+      background: "rgba(255,138,61,0.08)",
     }}
   >
-    Ongoing Documentation Requirements
+    <div
+      style={{
+        color: "#ff8a3d",
+        fontWeight: 700,
+        marginBottom: "8px",
+      }}
+    >
+      Ongoing Documentation Requirements
+    </div>
+
+    <div
+      style={{
+        color: "#d1d5db",
+        fontSize: "14px",
+        lineHeight: 1.6,
+      }}
+    >
+      Some compliance items represent standing documentation or
+      recordkeeping obligations, such as consent forms, aftercare
+      documentation, minor consent records, client advisories, policies,
+      plans, or posted records.
+      <br />
+      <br />
+      Compliance Logs remain separate and are used for recurring
+      operational proof, such as inspections, sterilization cycles, spore
+      tests, sharps disposal entries, and incident records.
+    </div>
   </div>
 
-  <div
-    style={{
-      color: "#d1d5db",
-      fontSize: "14px",
-      lineHeight: 1.6,
-    }}
-  >
-    Some compliance items represent ongoing recordkeeping obligations
-    such as consent forms, aftercare documentation, minor consent
-    records, and client advisories.
-    <br />
-    <br />
-    These items remain visible as compliance reminders but do not
-    affect your compliance score. Users are responsible for maintaining
-    current records and retaining documentation as required by
-    applicable laws and regulations.
-  </div>
-</div>
-
-      {viewMode === "both" ? (
-        <>
-        <div
-  style={{
-    marginBottom: "20px",
-    padding: "16px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,138,61,0.35)",
-    background: "rgba(255,138,61,0.08)",
-  }}
->
-  <div
-    style={{
-      color: "#ff8a3d",
-      fontWeight: 700,
-      marginBottom: "8px",
-    }}
-  >
-    Ongoing Documentation Requirements
-  </div>
-
-  <div
-    style={{
-      color: "#d1d5db",
-      fontSize: "14px",
-      lineHeight: 1.6,
-    }}
-  >
-    Some compliance items represent ongoing recordkeeping obligations
-    such as consent forms, aftercare documentation, minor consent
-    records, and client advisories.
-    <br />
-    <br />
-    These items remain visible as compliance reminders but do not
-    affect your compliance score. Users are responsible for maintaining
-    current records and retaining documentation as required by
-    applicable laws and regulations.
-  </div>
-</div>
-          {renderRequirementSection("Requirements", artistRecords)}
-          {renderRequirementSection("Shop Requirements", shopRecords)}
-        </>
-      ) : viewMode === "shop" ? (
-        renderRequirementSection("Shop Requirements", shopRecords)
-      ) : (
-        renderRequirementSection("Requirements", artistRecords)
-      )}
+  {renderRequirementSection(
+    professionType === "shop" ? "Shop Requirements" : "Requirements",
+    currentRequirementRecords
+  )}
+</>
  <AllianceGate
   allowed={isAllianceMember}
   title="Alliance Compliance Operations"

@@ -182,17 +182,24 @@ export async function POST(request: Request) {
       </div>
     `;
 
-    const clientResult = await sgMail.send({
-      from: "Artist Protection Alliance <quotes@artistprotectionalliance.com>",
-      to: clientEmail,
-      replyTo: shopEmail || "quotes@artistprotectionalliance.com",
-      subject: `${shopName || "Studio"} - Client Quote`,
-      html,
-    });
+    const validEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const safeReplyTo =
+  validEmailRegex.test(String(shopEmail || "").trim())
+    ? String(shopEmail).trim()
+    : "quotes@artistprotectionalliance.com";
+
+const clientResult = await sgMail.send({
+  from: "Artist Protection Alliance <quotes@artistprotectionalliance.com>",
+  to: clientEmail,
+  replyTo: safeReplyTo,
+  subject: `${shopName || "Studio"} - Client Quote`,
+  html,
+});
 
     let shopResult = null;
 
-    if (sendShopCopy && shopEmail) {
+    if (sendShopCopy && validEmailRegex.test(String(shopEmail || "").trim())) {
       shopResult = await sgMail.send({
         from: "Artist Protection Alliance <quotes@artistprotectionalliance.com>",
         to: shopEmail,

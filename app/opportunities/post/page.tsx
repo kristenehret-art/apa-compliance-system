@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
 export default function PostOpportunityPage() {
+  const searchParams = useSearchParams();
+const editId = searchParams.get("id");
+const isEditMode = Boolean(editId);
   const [form, setForm] = useState({
     category: "Shop Hiring",
     title: "",
@@ -29,6 +33,62 @@ export default function PostOpportunityPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  useEffect(() => {
+  async function loadOpportunityForEdit() {
+    if (!editId) return;
+
+    setLoading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Please log in to edit this opportunity.");
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("opportunities")
+      .select("*")
+      .eq("id", editId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    setLoading(false);
+
+    if (error) {
+      alert(`Could not load opportunity: ${error.message}`);
+      console.error("LOAD OPPORTUNITY ERROR:", error);
+      return;
+    }
+
+    if (!data) {
+      alert("This opportunity could not be found or does not belong to your account.");
+      return;
+    }
+
+    setForm({
+      category: data.category || "Shop Hiring",
+      title: data.title || "",
+      shop_name: data.shop_name || "",
+      artist_name: data.artist_name || "",
+      city: data.city || "",
+      state: data.state || "",
+      location_type: data.location_type || "In Person",
+      description: data.description || "",
+      requirements: data.requirements || "",
+      compensation: data.compensation || "",
+      contact_email: data.contact_email || "",
+      contact_phone: data.contact_phone || "",
+      website_url: data.website_url || "",
+    });
+  }
+
+  loadOpportunityForEdit();
+}, [editId]);
+
   async function submitOpportunity(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -48,25 +108,36 @@ if (!user) {
   .eq("user_id", user.id)
   .maybeSingle();
 
-    const { error } = await supabase.from("opportunities").insert({
-  ...form,
-  user_id: user.id,
-  compliance_status_visible:
-    profile?.compliance_status_visible ?? false,
-  status: "pending",
-  renewal_token: crypto.randomUUID(),
-  expires_at: new Date(
-    Date.now() + 30 * 24 * 60 * 60 * 1000
-  ).toISOString(),
-});
+const { data, error } = isEditMode
+  ? await supabase
+      .from("opportunities")
+      .update({
+        ...form,
+        status: "pending",
+      })
+      .eq("id", editId)
+      .eq("user_id", user.id)
+      .select()
+  : await supabase
+      .from("opportunities")
+      .insert({
+        ...form,
+        user_id: user.id,
+        compliance_status_visible:
+          profile?.compliance_status_visible ?? false,
+        status: "pending",
+        renewal_token: crypto.randomUUID(),
+        expires_at: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString(),
+      })
+      .select();
 
-    setLoading(false);
-
-    if (error) {
-      alert(`Something went wrong: ${error.message}`);
-      console.error("SUPABASE OPPORTUNITY ERROR:", error);
-      return;
-    }
+if (!data || data.length === 0) {
+  setLoading(false);
+  alert("This opportunity could not be saved. It may not belong to your account.");
+  return;
+}
 
     setSubmitted(true);
   }
@@ -76,10 +147,13 @@ if (!user) {
       <main style={pageStyle}>
         <div style={successCardStyle}>
           <p style={eyebrowStyle}>Artist Protection Alliance</p>
-          <h1 style={titleStyle}>Opportunity Submitted</h1>
+          <h1 style={titleStyle}>
+  {isEditMode ? "Opportunity Updated" : "Opportunity Submitted"}
+</h1>
           <p style={subtitleStyle}>
-            Your opportunity has been submitted for APA review. Once approved, it
-            will appear in the Hub.
+          {isEditMode
+  ? "Your opportunity has been updated and sent back for APA review. It will not appear publicly again until an admin approves the changes."
+  : "Your opportunity has been submitted for APA review. Once approved, it will appear in the Hub."}
           </p>
           <a href="/opportunities" style={linkButtonStyle}>
             Back to Opportunity Hub
@@ -94,7 +168,9 @@ if (!user) {
       <div style={containerStyle}>
         <section style={heroStyle}>
           <p style={eyebrowStyle}>Artist Protection Alliance</p>
-          <h1 style={titleStyle}>Post an Opportunity</h1>
+         <h1 style={titleStyle}>
+  {isEditMode ? "Edit Opportunity" : "Post an Opportunity"}
+</h1>
           <p style={subtitleStyle}>
             Submit a guest spot, studio opening,or convention for APA review.
           </p>
@@ -234,7 +310,13 @@ if (!user) {
           </label>
 
           <button type="submit" disabled={loading} style={submitButtonStyle}>
-            {loading ? "Submitting Opportunity..." : "Submit Opportuninty"}
+            {loading
+  ? isEditMode
+    ? "Updating Opportunity..."
+    : "Submitting Opportunity..."
+  : isEditMode
+  ? "Update Opportunity"
+  : "Submit Opportunity"}
           </button>
         </form>
       </div>

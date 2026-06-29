@@ -55,14 +55,16 @@ const [auditNotesById, setAuditNotesById] = useState<Record<number, string>>({})
     setLoading(true);
 
     const { data: opportunityData, error: opportunityError } = await supabase
-      .from("opportunities")
-      .select("*")
-      .order("created_at", { ascending: false });
+  .from("opportunities")
+  .select("*")
+  .eq("status", "pending")
+  .order("created_at", { ascending: false });
 
-    const { data: artistData, error: artistError } = await supabase
-      .from("artist_profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
+const { data: artistData, error: artistError } = await supabase
+  .from("artist_profiles")
+  .select("*")
+  .eq("status", "pending")
+  .order("created_at", { ascending: false });
 
     const { data: auditData, error: auditError } = await supabase
       .from("compliance_items")
@@ -488,9 +490,68 @@ async function updateArtistProfileStatus(id: string | number, status: string) {
 
                   <p style={{ marginTop: "10px" }}>{item.description}</p>
 
+                  <div
+  style={{
+    marginTop: "14px",
+    padding: "14px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,92,0,0.28)",
+    background: "rgba(255,92,0,0.08)",
+  }}
+>
+  <p style={mutedTextStyle}>
+    <strong>Admin Review — Full Description:</strong>
+  </p>
+
+  <p style={{ color: "#f2f2f2", whiteSpace: "pre-wrap" }}>
+    {item.description || "No description provided."}
+  </p>
+
+  <p style={mutedTextStyle}>
+    <strong>Requirements:</strong>{" "}
+    {item.requirements || "No requirements provided."}
+  </p>
+
+  <p style={mutedTextStyle}>
+    <strong>Compensation / Booth Terms:</strong>{" "}
+    {item.compensation || "No compensation details provided."}
+  </p>
+
+  <p style={mutedTextStyle}>
+    <strong>Contact Email:</strong>{" "}
+    {item.contact_email || "No contact email provided."}
+  </p>
+
+  <p style={mutedTextStyle}>
+    <strong>Contact Phone:</strong>{" "}
+    {item.contact_phone || "No contact phone provided."}
+  </p>
+
+  <p style={mutedTextStyle}>
+    <strong>Website / Social:</strong>{" "}
+    {item.website_url || "No website or social link provided."}
+  </p>
+</div>
+
                   <p style={mutedTextStyle}>
-                    Status: <strong>{item.status}</strong>
-                  </p>
+  Status:{" "}
+  <strong
+    style={{
+      color:
+        String(item.status).trim().toLowerCase() === "approved"
+          ? "#4caf50"
+          : String(item.status).trim().toLowerCase() === "rejected"
+          ? "#e53935"
+          : String(item.status).trim().toLowerCase() === "hidden"
+          ? "#999"
+          : String(item.status).trim().toLowerCase() === "expired"
+          ? "#777"
+          : "#ff8a3d",
+    }}
+  >
+    {item.status}
+  </strong>
+</p>
 
                   <p style={mutedTextStyle}>
                     Compliance Badge Visible:{" "}
@@ -580,9 +641,49 @@ async function updateArtistProfileStatus(id: string | number, status: string) {
                     {artist.city || "No city"}, {artist.state || "No state"}
                   </p>
 
-                  <p style={{ marginTop: "10px" }}>
-                    {artist.bio || "No bio provided."}
-                  </p>
+                  <div
+  style={{
+    marginTop: "14px",
+    padding: "14px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,92,0,0.28)",
+    background: "rgba(255,92,0,0.08)",
+  }}
+>
+  <p style={mutedTextStyle}>
+    <strong>Admin Review — Full Bio:</strong>
+  </p>
+
+  <p
+    style={{
+      color: "#f2f2f2",
+      whiteSpace: "pre-wrap",
+      lineHeight: 1.6,
+    }}
+  >
+    {artist.bio || "No bio provided."}
+  </p>
+</div>
+<p style={mutedTextStyle}>
+  Experience:{" "}
+  <strong>
+    {artist.years_experience || "Not provided"}
+  </strong>
+</p>
+
+<p style={mutedTextStyle}>
+  Looking For:{" "}
+  <strong>
+    {artist.looking_for || "Not provided"}
+  </strong>
+</p>
+
+<p style={mutedTextStyle}>
+  Travel Preference:{" "}
+  <strong>
+    {artist.willing_to_travel || "Not provided"}
+  </strong>
+</p>
 
                   {artist.tattoo_styles && (
                     <p style={mutedTextStyle}>

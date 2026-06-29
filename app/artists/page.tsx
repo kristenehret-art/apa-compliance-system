@@ -79,6 +79,7 @@ export default function ArtistsPage() {
 
   const [stateFilter, setStateFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  
 
   useEffect(() => {
   async function checkAuth() {

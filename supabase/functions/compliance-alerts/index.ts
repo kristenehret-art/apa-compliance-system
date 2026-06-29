@@ -74,20 +74,25 @@ async function sendComplianceEmail({
 
 Deno.serve(async () => {
   try {
-    const projectUrl = Deno.env.get("PROJECT_URL");
-    const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
-    const sendgridApiKey = Deno.env.get("SENDGRID_COMPLIANCE_API_KEY");
+    const projectUrl =
+  Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 
-    if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error:
-            "Missing PROJECT_URL, SERVICE_ROLE_KEY, or SENDGRID_COMPLIANCE_API_KEY",
-        }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
+const serviceRoleKey =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+  Deno.env.get("SERVICE_ROLE_KEY");
+
+const sendgridApiKey = Deno.env.get("SENDGRID_COMPLIANCE_API_KEY");
+
+if (!projectUrl || !serviceRoleKey || !sendgridApiKey) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error:
+        "Missing SUPABASE_URL/PROJECT_URL, SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY, or SENDGRID_COMPLIANCE_API_KEY",
+    }),
+    { status: 500, headers: { "Content-Type": "application/json" } }
+  );
+}
 
     const supabase = createClient(projectUrl, serviceRoleKey);
 

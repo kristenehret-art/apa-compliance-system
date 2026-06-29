@@ -111,65 +111,98 @@ export default function AccountPage() {
     setProfessionType(nextProfession);
   }
 
-  async function hideOpenToWorkProfile(id: string) {
-    setActionMessage("");
+async function hideOpenToWorkProfile(id: string) {
+  setActionMessage("");
 
-    const { error } = await supabase
-      .from("artist_profiles")
-      .update({ status: "hidden" })
-      .eq("id", id);
+  const { data, error } = await supabase
+    .from("artist_profiles")
+    .update({ status: "hidden" })
+    .eq("id", id)
+    .select();
 
-    if (error) {
-      console.error("HIDE OPEN TO WORK ERROR:", error);
-      setActionMessage("Could not hide this Open to Work profile.");
-      return;
-    }
-
-    setActionMessage("Open to Work profile hidden.");
-    await loadAccountData();
+  if (error) {
+    console.error("HIDE OPEN TO WORK ERROR:", error);
+    setActionMessage("Could not hide this Open to Work profile.");
+    return;
   }
 
-  async function renewOpenToWorkProfile(id: string) {
-    setActionMessage("");
-
-    const { error } = await supabase
-      .from("artist_profiles")
-      .update({ status: "pending" })
-      .eq("id", id);
-
-    if (error) {
-      console.error("RENEW OPEN TO WORK ERROR:", error);
-      setActionMessage("Could not renew this Open to Work profile.");
-      return;
-    }
-
-    setActionMessage("Open to Work profile renewed and sent for approval.");
-    await loadAccountData();
+  if (!data || data.length === 0) {
+    setActionMessage("No Open to Work profile was updated.");
+    return;
   }
 
-  async function deleteOpenToWorkProfile(id: string) {
-    const confirmed = window.confirm(
-      "Delete this Open to Work profile? This cannot be undone."
-    );
+  setOpenToWorkProfiles((currentProfiles) =>
+    currentProfiles.filter((profile) => profile.id !== id)
+  );
 
-    if (!confirmed) return;
+  setActionMessage("Open to Work profile hidden.");
+  await loadAccountData();
+}
 
-    setActionMessage("");
+async function renewOpenToWorkProfile(id: string) {
+  setActionMessage("");
 
-    const { error } = await supabase
-      .from("artist_profiles")
-      .delete()
-      .eq("id", id);
+  const { data, error } = await supabase
+    .from("artist_profiles")
+    .update({ status: "pending" })
+    .eq("id", id)
+    .select();
 
-    if (error) {
-      console.error("DELETE OPEN TO WORK ERROR:", error);
-      setActionMessage("Could not delete this Open to Work profile.");
-      return;
-    }
-
-    setActionMessage("Open to Work profile deleted.");
-    await loadAccountData();
+  if (error) {
+    console.error("RENEW OPEN TO WORK ERROR:", error);
+    setActionMessage("Could not renew this Open to Work profile.");
+    return;
   }
+
+  if (!data || data.length === 0) {
+    setActionMessage("No Open to Work profile was renewed.");
+    return;
+  }
+
+  setActionMessage("Open to Work profile renewed and sent for approval.");
+  await loadAccountData();
+}
+
+async function deleteOpenToWorkProfile(id: string) {
+  const confirmed = window.confirm(
+    "Delete this Open to Work profile? This cannot be undone."
+  );
+
+  if (!confirmed) return;
+
+  setActionMessage("");
+
+  const { data, error } = await supabase
+    .from("artist_profiles")
+    .delete()
+    .eq("id", id)
+    .select();
+
+if (error) {
+  console.error("DELETE OPEN TO WORK ERROR:", error);
+
+  alert(
+    `Delete failed:\n\n${error.message}\n\n${error.details || ""}`
+  );
+
+  setActionMessage(`Delete failed: ${error.message}`);
+  return;
+}
+
+ if (!data || data.length === 0) {
+  alert("Delete affected 0 rows.");
+
+  setActionMessage("No Open to Work profile was deleted.");
+  return;
+}
+
+  setOpenToWorkProfiles((currentProfiles) =>
+    currentProfiles.filter((profile) => profile.id !== id)
+  );
+
+  setActionMessage("Open to Work profile deleted.");
+  await loadAccountData();
+}
 
   async function hideOpportunity(id: string) {
     setActionMessage("");
@@ -223,17 +256,28 @@ export default function AccountPage() {
 
     setActionMessage("");
 
-    const { error } = await supabase.from("opportunities").delete().eq("id", id);
 
-    if (error) {
-      console.error("DELETE OPPORTUNITY ERROR:", error);
-      setActionMessage("Could not delete this opportunity.");
-      return;
-    }
 
-    setActionMessage("Opportunity deleted.");
-    await loadAccountData();
+const { data, error } = await supabase
+  .from("opportunities")
+  .delete()
+  .eq("id", id)
+  .select();
+
+if (error) {
+  console.error("DELETE OPPORTUNITY ERROR:", error);
+  setActionMessage("Could not delete this opportunity.");
+  return;
+}
+
+if (!data || data.length === 0) {
+  setActionMessage("No opportunity was deleted.");
+  return;
   }
+
+   setActionMessage("Opportunity deleted.");
+  await loadAccountData();
+}
 
   async function handleLogout() {
     await supabase.auth.signOut();

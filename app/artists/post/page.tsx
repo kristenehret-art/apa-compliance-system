@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
 export default function PostArtistProfilePage() {
+  const searchParams = useSearchParams();
+const editId = searchParams.get("id");
+const isEditMode = Boolean(editId);
+const router = useRouter();
+const [authChecking, setAuthChecking] = useState(true);
+
   const [form, setForm] = useState({
     artist_name: "",
     email: "",
@@ -42,6 +49,80 @@ export default function PostArtistProfilePage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  useEffect(() => {
+  async function checkAuth() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    setAuthChecking(false);
+  }
+
+  checkAuth();
+}, [router]);
+
+  useEffect(() => {
+  async function loadArtistProfileForEdit() {
+    if (!editId) return;
+
+    setLoading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Please log in to edit this Open to Work profile.");
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("artist_profiles")
+      .select("*")
+      .eq("id", editId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    setLoading(false);
+
+    if (error) {
+      alert(`Could not load Open to Work profile: ${error.message}`);
+      console.error("LOAD OPEN TO WORK ERROR:", error);
+      return;
+    }
+
+    if (!data) {
+      alert("This Open to Work profile could not be found or does not belong to your account.");
+      return;
+    }
+
+    setForm({
+      artist_name: data.artist_name || "",
+      email: data.email || "",
+      phone: data.phone || "",
+      city: data.city || "",
+      state: data.state || "",
+      tattoo_styles: data.tattoo_styles || "",
+      years_experience: data.years_experience
+        ? String(data.years_experience)
+        : "",
+      looking_for: data.looking_for || "Tattoo Artist Position",
+      willing_to_travel: data.willing_to_travel || "Local only",
+      instagram_url: data.instagram_url || "",
+      portfolio_url: data.portfolio_url || "",
+      bio: data.bio || "",
+    });
+  }
+
+  loadArtistProfileForEdit();
+}, [editId]);
+
   async function submitProfile(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -61,25 +142,49 @@ if (!user) {
   .eq("user_id", user.id)
   .maybeSingle();
 
-   const { error } = await supabase.from("artist_profiles").insert({
-  ...form,
-  instagram_url: normalizeInstagram(form.instagram_url),
-  user_id: user.id,
-  compliance_status_visible:
-    existingProfile?.compliance_status_visible ?? false,
-  status: "pending",
-});
+const { data, error } = isEditMode
+  ? await supabase
+      .from("artist_profiles")
+      .update({
+        ...form,
+        instagram_url: normalizeInstagram(form.instagram_url),
+        status: "pending",
+      })
+      .eq("id", editId)
+      .eq("user_id", user.id)
+      .select()
+  : await supabase
+      .from("artist_profiles")
+      .insert({
+        ...form,
+        instagram_url: normalizeInstagram(form.instagram_url),
+        user_id: user.id,
+        compliance_status_visible:
+          existingProfile?.compliance_status_visible ?? false,
+        status: "pending",
+      })
+      .select();
 
-    setLoading(false);
-
-    if (error) {
-      alert("Profile submission failed: " + error.message);
-      console.error(error);
-      return;
-    }
+if (!data || data.length === 0) {
+  setLoading(false);
+  alert(
+    "This Open to Work profile could not be saved. It may not belong to your account."
+  );
+  return;
+}
 
     setSubmitted(true);
   }
+
+  if (authChecking) {
+  return (
+    <main style={pageStyle}>
+      <div style={containerStyle}>
+        <p>Checking login...</p>
+      </div>
+    </main>
+  );
+}
 
   if (submitted) {
     return (
@@ -92,11 +197,13 @@ if (!user) {
               color: "#ff5c00",
             }}
           >
-            Profile Submitted
+            {isEditMode ? "Profile Updated" : "Profile Submitted"}
           </h1>
 
           <p style={{ color: "#cfcfcf", lineHeight: 1.6 }}>
-            Your Open to Work profile has been submitted for APA review. Once approved, it will appear in the artist directory within 24 hours. 
+            {isEditMode
+  ? "Your Open to Work profile has been updated and sent back for APA review. It will not appear publicly again until an admin approves the changes."
+  : "Your Open to Work profile has been submitted for APA review. Once approved, it will appear in the artist directory within 24 hours."}
         
           </p>
 
@@ -120,7 +227,7 @@ if (!user) {
     <main style={pageStyle}>
       <div style={containerStyle}>
         <div style={headerCardStyle}>
-          <h1 style={titleStyle}>Create Open to Work Profile</h1>
+          <h1 style={titleStyle}>{isEditMode ? "Edit Open to Work Profile" : "Create Open to Work Profile"}</h1>
 
           <p style={subtitleStyle}>
             Let shops discover you for positions, guest spots,
@@ -301,7 +408,13 @@ if (!user) {
             disabled={loading}
             style={submitButtonStyle}
           >
-            {loading ? "Submitting..." : "Submit Profile"}
+            {loading
+  ? isEditMode
+    ? "Updating..."
+    : "Submitting..."
+  : isEditMode
+  ? "Update Profile"
+  : "Submit Profile"}
           </button>
         </form>
       </div>
