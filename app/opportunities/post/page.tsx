@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-export default function PostOpportunityPage() {
+function PostOpportunityPageContent() {
   const searchParams = useSearchParams();
 const editId = searchParams.get("id");
 const isEditMode = Boolean(editId);
@@ -321,6 +321,22 @@ if (!data || data.length === 0) {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function PostOpportunityPage() {
+  return (
+    <Suspense
+      fallback={
+        <main style={pageStyle}>
+          <div style={containerStyle}>
+            <p>Loading...</p>
+          </div>
+        </main>
+      }
+    >
+      <PostOpportunityPageContent />
+    </Suspense>
   );
 }
 

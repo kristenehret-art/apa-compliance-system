@@ -95,7 +95,13 @@ function RenewPageContent() {
 }
 export default function RenewPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <main>
+          <p>Loading...</p>
+        </main>
+      }
+    >
       <RenewPageContent />
     </Suspense>
   );
