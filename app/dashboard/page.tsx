@@ -238,8 +238,13 @@ async function loadQuotes(silent = false) {
 }
 
   function getQuoteUrl(slug: string) {
-    if (typeof window === "undefined") return `/quote/${slug}`;
-    return `${window.location.origin}/quote/${slug}`;
+    const appBaseUrl = (
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://apa-compliance-system-y9th.vercel.app"
+).replace(/\/$/, "");
+
+return `${appBaseUrl}/quote/${slug}`;
   }
 
   async function copyQuoteLink(slug: string) {

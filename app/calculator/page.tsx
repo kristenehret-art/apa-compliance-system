@@ -1117,14 +1117,28 @@ if (!fullQuoteLink) {
     return;
   }
 
-  const appBaseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+  const appBaseUrl = (
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://apa-compliance-system-y9th.vercel.app"
+).replace(/\/$/, "");
 
-  fullQuoteLink = `${appBaseUrl}${linkData.quoteUrl}`;
+fullQuoteLink = `${appBaseUrl}${linkData.quoteUrl}`;
 
+setQuoteLink(fullQuoteLink);
+}
+if (fullQuoteLink.includes("localhost:3000")) {
+  const appBaseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://apa-compliance-system-y9th.vercel.app"
+  ).replace(/\/$/, "");
+
+  const quotePath = fullQuoteLink.split("localhost:3000")[1] || "";
+
+  fullQuoteLink = `${appBaseUrl}${quotePath}`;
   setQuoteLink(fullQuoteLink);
 }
-
     // 2. Send email WITH link
     const emailResponse = await fetch("/api/send-quote", {
       method: "POST",
@@ -1231,7 +1245,13 @@ async function createQuoteLink() {
       return;
     }
 
-    const fullUrl = `${window.location.origin}${data.quoteUrl}`;
+    const appBaseUrl = (
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://apa-compliance-system-y9th.vercel.app"
+).replace(/\/$/, "");
+
+const fullUrl = `${appBaseUrl}${data.quoteUrl}`;
 
     setQuoteLink(fullUrl);
 
