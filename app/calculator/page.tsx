@@ -1066,12 +1066,17 @@ async function sendQuoteEmail() {
 let fullQuoteLink = quoteLink;
 
 if (!fullQuoteLink) {
+  const {
+    data: { user: quoteOwner },
+  } = await supabase.auth.getUser();
+
   const linkResponse = await fetch("/api/create-quote", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      authUserId: quoteOwner?.id || null,
       shopName,
       artistName,
       artistContact,
@@ -1192,15 +1197,20 @@ async function createQuoteLink() {
   setIsCreatingQuoteLink(true);
 
   try {
-   const response = await fetch("/api/create-quote", {
-  method: "POST",
+  const {
+    data: { user: quoteOwner },
+  } = await supabase.auth.getUser();
+
+  const response = await fetch("/api/create-quote", {
+    method: "POST",
   headers: {
     "Content-Type": "application/json",
   },
-  body: JSON.stringify({
-    shopName,
-    artistName,
-    artistContact,
+ body: JSON.stringify({
+  authUserId: quoteOwner?.id || null,
+  shopName,
+  artistName,
+  artistContact,
     shopEmail,
     clientName,
     clientEmail,

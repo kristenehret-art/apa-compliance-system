@@ -18,10 +18,11 @@ export async function POST(request: Request) {
     const depositAmount = Number(body.depositAmount || 0);
     const depositDueHours = Number(body.depositDueHours || 24);
 
-    const { data, error } = await supabase
-      .from("quotes")
-      .insert({
-        quote_slug: quoteSlug,
+const { data, error } = await supabase
+  .from("quotes")
+  .insert({
+    quote_slug: quoteSlug,
+    auth_user_id: body.authUserId || null,
 
         shop_name: body.shopName || "",
         artist_name: body.artistName || "",

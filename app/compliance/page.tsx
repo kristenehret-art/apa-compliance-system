@@ -373,6 +373,8 @@ const [inspectionChecklistForm, setInspectionChecklistForm] = useState({
 const [isAllianceMember, setIsAllianceMember] =
   useState(false);
 
+const canUseAllianceCompliance = isAllianceMember;
+
 const [profileLoaded, setProfileLoaded] =
   useState(false);
 
@@ -406,6 +408,11 @@ useEffect(() => {
 }, [authUserId]);
 
 function exportComplianceLogsCsv(logKey?: string) {
+    if (!canUseAllianceCompliance) {
+    alert("Compliance log exports are available to Alliance members.");
+    setMessage("Upgrade to Alliance to export compliance logs.");
+    return;
+  }
   const logsToExport = logEntries.filter((entry) => {
     if (logKey && entry.log_type_key !== logKey) return false;
 
@@ -543,6 +550,11 @@ function exportComplianceLogsCsv(logKey?: string) {
   setMessage("Compliance log CSV export downloaded.");
 }
 function exportComplianceLogsPdf(logKey?: string) {
+    if (!canUseAllianceCompliance) {
+    alert("Compliance log PDFs are available to Alliance members.");
+    setMessage("Upgrade to Alliance to export compliance logs.");
+    return;
+  }
   const logsToExport = logEntries.filter((entry) => {
         if (logKey && entry.log_type_key !== logKey) return false;
 
@@ -800,6 +812,12 @@ useEffect(() => {
 }, [authUserId]);
 
 function exportRequirementsPdf() {
+  if (!canUseAllianceCompliance) {
+    alert("Compliance PDF exports are available to Alliance members.");
+    setMessage("Upgrade to Alliance to export compliance reports.");
+    return;
+  }
+
   const recordsToExport = visibleRequirementRecords;
 
   if (!recordsToExport.length) {
@@ -934,6 +952,12 @@ function exportRequirementsPdf() {
 }
 
 function exportFullComplianceReportPdf() {
+  if (!canUseAllianceCompliance) {
+    alert("Full compliance reports are available to Alliance members.");
+    setMessage("Upgrade to Alliance to export full compliance reports.");
+    return;
+  }
+
   const recordsToExport = visibleRequirementRecords;
 
   const logsToExport = logEntries.filter((entry) => {
@@ -1146,77 +1170,6 @@ function exportFullComplianceReportPdf() {
   reportWindow.document.close();
   setMessage("Full compliance report opened.");
 }
-<div style={styles.card}>
-  <h2 style={styles.sectionTitle}>Archived Compliance Logs</h2>
-
-  <p style={styles.helperText}>
-    Archived logs are retained for audit history and can be restored at any time.
-  </p>
-
-  {logEntries.filter((entry) => entry.archived).length === 0 ? (
-    <p style={styles.emptyText}>No archived compliance logs.</p>
-  ) : (
-    logTypes.map((log) => {
-      const archivedEntries = logEntries.filter(
-        (entry) => entry.log_type_key === log.key && entry.archived
-      );
-
-      const filteredArchivedEntries = archivedEntries.filter(
-  (entry) => {
-    const search = archivedSearch.toLowerCase();
-
-    const logName =
-      logTypes
-        .find((log) => log.key === entry.log_type_key)
-        ?.name?.toLowerCase() || "";
-
-    return (
-      logName.includes(search) ||
-      entry.result?.toLowerCase().includes(search) ||
-      entry.notes?.toLowerCase().includes(search) ||
-      entry.entry_date?.includes(search)
-    );
-  }
-);
-
-      if (archivedEntries.length === 0) return null;
-
-      return (
-        <div key={`archived-${log.key}`} style={styles.logCard}>
-          <h3 style={styles.logTitle}>{log.name}</h3>
-
-          {archivedEntries.map((entry) => (
-            <div key={entry.id} style={styles.historyItem}>
-              <p>
-                <strong>Date:</strong> {entry.entry_date || "Not recorded"}
-              </p>
-
-              {entry.result && (
-                <p>
-                  <strong>Result:</strong> {entry.result}
-                </p>
-              )}
-
-              {entry.notes && (
-                <p>
-                  <strong>Notes:</strong> {entry.notes}
-                </p>
-              )}
-
-              <button
-                type="button"
-                style={styles.secondaryButton}
-                onClick={() => restoreComplianceLogEntry(entry.id)}
-              >
-                Restore Log
-              </button>
-            </div>
-          ))}
-        </div>
-      );
-    })
-  )}
-</div>
 
 useEffect(() => {
   if (!locationsReady || !state || !authUserId) return;
@@ -1277,12 +1230,10 @@ if (
     setViewMode("artist");
   }
 }
-if (
+setIsAllianceMember(
   profile?.membership_tier === "alliance" ||
-  profile?.membership_tier === "admin"
-) {
-  setIsAllianceMember(true);
-}
+    profile?.membership_tier === "admin"
+);
     setProfileLoaded(true);
   } catch (error) {
     console.error(
@@ -2443,7 +2394,7 @@ const activityFeed = useMemo(() => {
             </a>
           )}
         </div>
-      {isAllianceMember && (
+      {canUseAllianceCompliance && (
         <div style={styles.recordDetailsGrid}>
           <div style={styles.detailCard}>
             <span>Completed</span>
@@ -2474,7 +2425,7 @@ const activityFeed = useMemo(() => {
           </div>
         </div>
  )}
-                {editable && isAllianceMember && (
+                {editable && canUseAllianceCompliance && (
           <div style={styles.inlineActions}>
             <div style={styles.dateField}>
               <label style={styles.inputLabel}>Completed Date</label>
@@ -2514,7 +2465,7 @@ const activityFeed = useMemo(() => {
             </button>
           </div>
         )}
-        {isAllianceMember && (
+        {canUseAllianceCompliance && (
           <div style={styles.compactDocumentBox}>
             <div>
               <strong>Document</strong>
@@ -4803,6 +4754,7 @@ function renderArchivedComplianceLogs() {
           {sectionNeedsAction.map((record) => renderRecord(record, true))}
                 </section>
 
+                {canUseAllianceCompliance && (
         <section
   style={{
     ...styles.completedCard,
@@ -4862,8 +4814,9 @@ function renderArchivedComplianceLogs() {
     "Completed licenses, permits, and certifications will appear here once activated."
   )}
 
-          {sectionCompleted.map((record) => renderRecord(record, false))}
+                    {sectionCompleted.map((record) => renderRecord(record, false))}
         </section>
+      )}
       </>
     );
   }
@@ -5103,7 +5056,7 @@ function renderArchivedComplianceLogs() {
 )}
       </section>
 
-      {isAllianceMember && renderActivityFeed()}
+      {canUseAllianceCompliance && renderActivityFeed()}
 
       {filteredRecords.length === 0 && (
         <section style={styles.card}>
@@ -5160,7 +5113,7 @@ function renderArchivedComplianceLogs() {
   )}
 </>
  <AllianceGate
-  allowed={isAllianceMember}
+  allowed={canUseAllianceCompliance}
   title="Alliance Compliance Operations"
   description="Unlock document vault storage, expiration tracking, reminder emails, compliance history, uploads, and full compliance management tools for tattoo artists, piercers, and shops."
 >

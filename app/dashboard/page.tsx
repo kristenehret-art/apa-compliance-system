@@ -210,21 +210,38 @@ useEffect(() => {
 async function loadQuotes(silent = false) {
   if (!silent) setLoading(true);
 
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    console.error("DASHBOARD AUTH ERROR:", userError);
+    setQuotes([]);
+    setArchivedQuotes([]);
+    if (!silent) setLoading(false);
+    return;
+  }
+
   const { data: activeData, error: activeError } = await supabase
     .from("quotes")
     .select("*")
+    .eq("auth_user_id", user.id)
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   const { data: archivedData, error: archivedError } = await supabase
     .from("quotes")
     .select("*")
+    .eq("auth_user_id", user.id)
     .not("archived_at", "is", null)
     .order("archived_at", { ascending: false });
 
   if (activeError || archivedError) {
     console.error("DASHBOARD LOAD ERROR:", activeError || archivedError);
     alert("Could not load dashboard.");
+    setQuotes([]);
+    setArchivedQuotes([]);
     if (!silent) setLoading(false);
     return;
   }
@@ -271,13 +288,25 @@ return `${appBaseUrl}/quote/${slug}`;
 
     const now = new Date().toISOString();
 
-    const { error } = await supabase
-      .from("quotes")
-      .update({
-        archived_at: now,
-        updated_at: now,
-      })
-      .eq("quote_slug", quote.quote_slug);
+const {
+  data: { user },
+  error: userError,
+} = await supabase.auth.getUser();
+
+if (userError || !user) {
+  console.error("ARCHIVE AUTH ERROR:", userError);
+  alert("You must be logged in to archive quotes.");
+  return;
+}
+
+const { error } = await supabase
+  .from("quotes")
+  .update({
+    archived_at: now,
+    updated_at: now,
+  })
+  .eq("quote_slug", quote.quote_slug)
+  .eq("auth_user_id", user.id);
 
     if (error) {
       console.error("ARCHIVE QUOTE ERROR:", error);
@@ -336,13 +365,25 @@ async function restoreQuote(quote: Quote) {
 
   const now = new Date().toISOString();
 
-  const { error } = await supabase
-    .from("quotes")
-    .update({
-      archived_at: null,
-      updated_at: now,
-    })
-    .eq("quote_slug", quote.quote_slug);
+const {
+  data: { user },
+  error: userError,
+} = await supabase.auth.getUser();
+
+if (userError || !user) {
+  console.error("RESTORE AUTH ERROR:", userError);
+  alert("You must be logged in to restore quotes.");
+  return;
+}
+
+const { error } = await supabase
+  .from("quotes")
+  .update({
+    archived_at: null,
+    updated_at: now,
+  })
+  .eq("quote_slug", quote.quote_slug)
+  .eq("auth_user_id", user.id);
 
   if (error) {
     console.error("RESTORE QUOTE ERROR:", error);
