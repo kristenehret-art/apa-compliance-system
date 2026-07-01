@@ -728,42 +728,28 @@ const presetLabels =
         large: "Large",
         fullDay: "Full Day",
       };
-      useEffect(() => {
-  const savedState = localStorage.getItem("apaCalculatorState");
-  const savedCity = localStorage.getItem("apaCalculatorCity");
-
-  if (savedState && stateHourlyRates[savedState]) {
-    setState(savedState);
-
-    if (savedCity && cityRateMultipliers[savedState]?.[savedCity]) {
-      setCity(savedCity);
-    }
-  }
+useEffect(() => {
+  localStorage.removeItem("apaCalculatorState");
+  localStorage.removeItem("apaCalculatorCity");
 
   setHasLoadedSavedLocation(true);
 }, []);
+
 useEffect(() => {
   if (!hasLoadedSavedLocation) return;
 
-  localStorage.setItem("apaCalculatorState", state);
+  const validCity = cityRateMultipliers[state]?.[city]
+    ? city
+    : "Statewide Average";
 
-  if (!cityRateMultipliers[state]?.[city]) {
-    setCity("Statewide Average");
-    localStorage.setItem("apaCalculatorCity", "Statewide Average");
+  if (validCity !== city) {
+    setCity(validCity);
+    return;
   }
 
   setHourlyRate(stateHourlyRates[state]);
   setTaxRate(stateTaxRates[state]);
-}, [state, hasLoadedSavedLocation]);
-useEffect(() => {
-  if (!hasLoadedSavedLocation) return;
-
-  localStorage.setItem("apaCalculatorCity", city);
-}, [city, hasLoadedSavedLocation]);
-
-useEffect(() => {
-  localStorage.setItem("apaCalculatorCity", city);
-}, [city]);
+}, [state, city, hasLoadedSavedLocation]);
 
   useEffect(() => {
   async function loadMembership() {
@@ -830,7 +816,47 @@ useEffect(() => {
         return;
       }
 
-      if (!data) return;
+      if (!data) {
+  setShopName("");
+  setArtistName("");
+  setArtistContact("");
+  setShopEmail("");
+  setSendShopCopy(true);
+
+  setState("AZ");
+  setCity("Statewide Average");
+  setPricingMode("hourly");
+  setHourlyRate(stateHourlyRates.AZ);
+  setPiecePrice(300);
+  setMaterials(25);
+
+  setOperatingModel("independent");
+  setBoothRent(40);
+  setArtistPercentage(70);
+  setShopPercentage(30);
+  setBoothRentFrequency("per_appointment");
+  setWeeklyBoothRent(0);
+  setMonthlyBoothRent(0);
+  setAppointmentsPerWeek(0);
+  setAppointmentsPerMonth(0);
+  setBuildExpensesIntoQuote(false);
+
+  setTaxRate(stateTaxRates.AZ);
+  setApplyTax(true);
+
+  setBookingInstructions("");
+  setBookingLink("");
+
+  setDepositRequired(false);
+  setDepositPercent(20);
+  setPaymentInstructions("");
+  setDepositDueHours(24);
+
+  setApplyDiscount(false);
+  setDiscount(0);
+
+  return;
+}
 
 setShopName(data.shop_name || "");
 setArtistName(data.artist_name || "");

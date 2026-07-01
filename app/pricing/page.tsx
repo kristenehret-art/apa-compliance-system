@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "../../lib/supabase/client";
 
 export default function PricingPage() {
+  const router = useRouter();
   const supabase = createClient();  
   const [profileId, setProfileId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [membershipTier, setMembershipTier] = useState("free");
+  const [membershipLoaded, setMembershipLoaded] = useState(false);
 
 useEffect(() => {
   async function loadUser() {
@@ -27,9 +30,14 @@ useEffect(() => {
         .eq("id", session.user.id)
         .single();
 
-      setMembershipTier(
-        profile?.membership_tier || "free"
-      );
+     const tier = profile?.membership_tier || "free";
+
+setMembershipTier(tier);
+setMembershipLoaded(true);
+
+if (tier === "alliance" || tier === "admin") {
+  router.replace("/account");
+}
     }
   }
 
@@ -49,21 +57,27 @@ useEffect(() => {
           .eq("id", session.user.id)
           .single();
 
-        setMembershipTier(
-          profile?.membership_tier || "free"
-        );
-      } else {
-        setProfileId(null);
-        setEmail(null);
-        setMembershipTier("free");
-      }
+        const tier = profile?.membership_tier || "free";
+
+setMembershipTier(tier);
+setMembershipLoaded(true);
+
+if (tier === "alliance" || tier === "admin") {
+  router.replace("/account");
+}
+     } else {
+  setProfileId(null);
+  setEmail(null);
+  setMembershipTier("free");
+  setMembershipLoaded(true);
+}
     }
   );
 
   return () => {
     subscription.unsubscribe();
   };
-}, []);
+}, [router]);
 
   async function handleAllianceCheckout() {
     if (!profileId) {
@@ -102,6 +116,16 @@ useEffect(() => {
     }
   }
 
+  if (!membershipLoaded) {
+  return (
+    <main style={pageStyle}>
+      <p style={{ color: "#aaa", textAlign: "center" }}>
+        Loading membership...
+      </p>
+    </main>
+  );
+}
+
   return (
     <main style={pageStyle}>
       <section style={heroStyle}>
@@ -139,9 +163,21 @@ useEffect(() => {
           </ul>
 
           {!profileId ? (
-  <Link href="/signup" style={secondaryButtonStyle}>
-    Create Free Account
-  </Link>
+ <Link
+  href="/signup"
+  style={{
+    ...secondaryButtonStyle,
+   width: "calc(100% - 48px)",
+maxWidth: "none",
+margin: "32px auto 0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+  }}
+>
+  Create Free Account
+</Link>
 ) : membershipTier === "alliance" ||
   membershipTier === "admin" ? (
   <Link href="/account" style={secondaryButtonStyle}>
