@@ -64,26 +64,38 @@ export async function POST(request: Request) {
       );
     }
 
-    const { error } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        membership_tier: "alliance",
-        membership_status: "active",
-        stripe_customer_id: String(session.customer || ""),
-        stripe_subscription_id: String(session.subscription || ""),
-      })
-      .eq("id", profileId);
+const membershipUpdate = {
+  membership_tier: "alliance",
+  membership_status: "active",
+  stripe_customer_id: String(session.customer || ""),
+  stripe_subscription_id: String(session.subscription || ""),
+};
 
-    if (error) {
-      console.error("SUPABASE MEMBERSHIP UPDATE ERROR:", error);
+const { data: updatedProfiles, error } = await supabaseAdmin
+  .from("profiles")
+  .update(membershipUpdate)
+  .eq("auth_user_id", profileId)
+  .select("id, auth_user_id, membership_tier");
 
-      return NextResponse.json(
-        { error: "Could not update profile membership." },
-        { status: 500 }
-      );
-    }
+if (error) {
+  console.error("SUPABASE MEMBERSHIP UPDATE ERROR:", error);
 
-    console.log("PROFILE SUCCESSFULLY UPGRADED:", profileId);
+  return NextResponse.json(
+    { error: "Could not update profile membership." },
+    { status: 500 }
+  );
+}
+
+if (!updatedProfiles || updatedProfiles.length === 0) {
+  console.error("NO PROFILE UPDATED FOR AUTH USER ID:", profileId);
+
+  return NextResponse.json(
+    { error: "No matching profile found for auth user ID." },
+    { status: 500 }
+  );
+}
+
+console.log("PROFILE SUCCESSFULLY UPGRADED:", updatedProfiles);
   }
 
   return NextResponse.json({ received: true });
