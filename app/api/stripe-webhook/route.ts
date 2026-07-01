@@ -64,38 +64,38 @@ export async function POST(request: Request) {
       );
     }
 
-const membershipUpdate = {
-  membership_tier: "alliance",
-  membership_status: "active",
-  stripe_customer_id: String(session.customer || ""),
-  stripe_subscription_id: String(session.subscription || ""),
-};
+    const membershipUpdate = {
+      membership_tier: "alliance",
+      membership_status: "active",
+      stripe_customer_id: String(session.customer || ""),
+      stripe_subscription_id: String(session.subscription || ""),
+    };
 
-const { data: updatedProfiles, error } = await supabaseAdmin
-  .from("profiles")
-  .update(membershipUpdate)
-  .eq("auth_user_id", profileId)
-  .select("id, auth_user_id, membership_tier");
+    const { data: updatedProfiles, error } = await supabaseAdmin
+      .from("profiles")
+      .update(membershipUpdate)
+      .eq("id", profileId)
+      .select("id, membership_tier, membership_status");
 
-if (error) {
-  console.error("SUPABASE MEMBERSHIP UPDATE ERROR:", error);
+    if (error) {
+      console.error("SUPABASE MEMBERSHIP UPDATE ERROR:", error);
 
-  return NextResponse.json(
-    { error: "Could not update profile membership." },
-    { status: 500 }
-  );
-}
+      return NextResponse.json(
+        { error: "Could not update profile membership." },
+        { status: 500 }
+      );
+    }
 
-if (!updatedProfiles || updatedProfiles.length === 0) {
-  console.error("NO PROFILE UPDATED FOR AUTH USER ID:", profileId);
+    if (!updatedProfiles || updatedProfiles.length === 0) {
+      console.error("NO PROFILE UPDATED FOR PROFILE ID:", profileId);
 
-  return NextResponse.json(
-    { error: "No matching profile found for auth user ID." },
-    { status: 500 }
-  );
-}
+      return NextResponse.json(
+        { error: "No matching profile found for profile ID." },
+        { status: 500 }
+      );
+    }
 
-console.log("PROFILE SUCCESSFULLY UPGRADED:", updatedProfiles);
+    console.log("PROFILE SUCCESSFULLY UPGRADED:", updatedProfiles);
   }
 
   return NextResponse.json({ received: true });
