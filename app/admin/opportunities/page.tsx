@@ -42,14 +42,20 @@ const [auditNotesById, setAuditNotesById] = useState<Record<number, string>>({})
     }
   }
 
-  function logoutAdmin() {
-    localStorage.removeItem("apa_admin_unlocked");
-    setUnlocked(false);
-    setPassword("");
-    setOpportunities([]);
-    setArtistProfiles([]);
-    setComplianceAuditItems([]);
-  }
+ async function logoutAdmin() {
+  await supabase.auth.signOut();
+
+  localStorage.removeItem("apa_admin_unlocked");
+  sessionStorage.clear();
+
+  setUnlocked(false);
+  setPassword("");
+  setOpportunities([]);
+  setArtistProfiles([]);
+  setComplianceAuditItems([]);
+
+  window.location.href = "/login";
+}
 
   async function fetchData() {
     setLoading(true);
